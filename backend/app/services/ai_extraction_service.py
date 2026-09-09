@@ -69,31 +69,65 @@ TASK_QUERIES = {
 }
 
 
-def _provider(*, force_mock: bool = False):
+def _resolved_ai_config(*, force_mock: bool = False) -> dict:
+    from app.domain.ai_runtime_settings import get_runtime
+
     s = get_settings()
+    rt = get_runtime()
+    enabled = bool(force_mock) or (s.ai_enabled if rt.enabled is None else bool(rt.enabled))
+    provider = "mock" if force_mock else (rt.provider or s.ai_provider or "openai")
+    model = rt.model or s.ai_model or "gpt-4o-mini"
+    base_url = rt.base_url or s.ai_base_url or "https://api.openai.com/v1"
+    api_key = rt.api_key or (s.openai_api_key or None) or None
+    return {
+        "enabled": enabled,
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "api_key": api_key,
+        "timeout": s.ai_timeout,
+        "max_tokens": s.ai_max_tokens,
+        "temperature": s.ai_temperature,
+    }
+
+
+def _provider(*, force_mock: bool = False):
+    cfg = _resolved_ai_config(force_mock=force_mock)
     return get_ai_provider(
-        enabled=s.ai_enabled or force_mock,
-        provider="mock" if force_mock else s.ai_provider,
-        base_url=s.ai_base_url,
-        model=s.ai_model,
-        timeout=s.ai_timeout,
-        max_tokens=s.ai_max_tokens,
-        temperature=s.ai_temperature,
+        enabled=cfg["enabled"],
+        provider=cfg["provider"],
+        base_url=cfg["base_url"],
+        model=cfg["model"],
+        timeout=cfg["timeout"],
+        max_tokens=cfg["max_tokens"],
+        temperature=cfg["temperature"],
         force_mock=force_mock,
+        api_key=cfg["api_key"],
     )
 
 
 def ai_status(*, force_mock: bool = False) -> AIStatusOut:
-    s = get_settings()
+    cfg = _resolved_ai_config(force_mock=force_mock)
+    if not cfg["enabled"] and not force_mock:
+        return AIStatusOut(
+            enabled=False,
+            provider="disabled",
+            model=cfg["model"],
+            available=False,
+            detail="AI disabled (env or Settings)",
+        )
+    if cfg["provider"] in {"openai", "cloud", "gpt"} and not cfg["api_key"] and not force_mock:
+        return AIStatusOut(
+            enabled=True,
+            provider="openai",
+            model=cfg["model"],
+            available=False,
+            detail="OpenAI API key missing — set in Settings",
+        )
     provider = _provider(force_mock=force_mock)
     st = provider.status()
-    # When disabled, still report cleanly
-    if not s.ai_enabled and not force_mock:
-        return AIStatusOut(
-            enabled=False, provider="disabled", model=s.ai_model, available=False, detail="AI_ENABLED=false"
-        )
     return AIStatusOut(
-        enabled=s.ai_enabled or force_mock,
+        enabled=True,
         provider=st.provider,
         model=st.model,
         available=st.available,

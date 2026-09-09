@@ -22,12 +22,13 @@ class Settings(BaseSettings):
 
     ai_enabled: bool = False
     external_ai_enabled: bool = False
-    ai_provider: str = "local"
-    ai_base_url: str = "http://127.0.0.1:11434"
-    ai_model: str = "llama3.2"
+    ai_provider: str = "openai"
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "gpt-4o-mini"
     ai_timeout: float = 60.0
     ai_max_tokens: int = 2048
     ai_temperature: float = 0.0
+    openai_api_key: str = ""  # env OPENAI_API_KEY; prefer UI runtime settings for local use
 
     document_storage_root: str = "storage/documents"
     max_upload_bytes: int = 26214400

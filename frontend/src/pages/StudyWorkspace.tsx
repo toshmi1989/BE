@@ -152,8 +152,8 @@ function BlockerCard(props: {
   );
 }
 
-export function StudyWorkspace() {
-  const { authRequired, user } = useAuth();
+export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
+  const { authRequired, user, version } = useAuth();
   const canApproveDecisions = canPermission({
     authRequired,
     role: user?.role,
@@ -1522,6 +1522,11 @@ export function StudyWorkspace() {
               error={ops.decision.error}
               canApprove={canApproveDecisions}
               reviewer={reviewer}
+              aiEnabled={
+                props.aiEnabledOverride !== undefined
+                  ? props.aiEnabledOverride
+                  : Boolean(version?.ai_enabled)
+              }
               onAnalyze={analyzePackage}
               onDismissError={() => setOps((prev) => clearOpError(prev, "decision"))}
               onOutcome={setDecisionOutcome}
@@ -1534,6 +1539,7 @@ export function StudyWorkspace() {
                 setGlobalError(msg);
               }}
               runAction={(fn) => withOp("decision", fn)}
+              onGoTab={(t) => goTab(t)}
             />
           </>
         )}

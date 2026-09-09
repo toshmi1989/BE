@@ -746,6 +746,69 @@ export function aiStatus() {
   }>("/api/ai/status");
 }
 
+export type AiSettingsView = {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key_configured: boolean;
+  api_key_masked: string | null;
+  runtime_override: boolean;
+  updated_at: string | null;
+  assistive_only: boolean;
+  cannot_approve_decisions: boolean;
+  default_cloud_model: string;
+  status?: {
+    enabled: boolean;
+    provider: string;
+    model: string | null;
+    available: boolean;
+    detail?: string | null;
+  };
+  saved?: boolean;
+};
+
+const AI_KEY_STORAGE = "be_ai_api_key";
+
+export function getStoredAiApiKey(): string | null {
+  try {
+    return sessionStorage.getItem(AI_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAiApiKey(key: string | null): void {
+  try {
+    if (!key) sessionStorage.removeItem(AI_KEY_STORAGE);
+    else sessionStorage.setItem(AI_KEY_STORAGE, key);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearStoredAiApiKey(): void {
+  setStoredAiApiKey(null);
+}
+
+export function getAiSettings() {
+  return request<AiSettingsView>("/api/ai/settings");
+}
+
+export function updateAiSettings(body: {
+  enabled?: boolean;
+  api_key?: string;
+  clear_api_key?: boolean;
+  provider?: string;
+  model?: string;
+  base_url?: string;
+}) {
+  return request<AiSettingsView>("/api/ai/settings", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
 export function aiExtract(
   projectId: string,
   body: {

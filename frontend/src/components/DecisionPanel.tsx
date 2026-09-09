@@ -20,6 +20,13 @@ import {
   type DecisionOptionInput,
 } from "./DecisionForm";
 import { humanLabel } from "../writerLabels";
+import {
+  AI_ROLE_COPY,
+  domainTitle,
+  explainDecisionBlockers,
+  optionTitle,
+  primaryNextAction,
+} from "../workspace/decisionExplain";
 import { slicesFromAffects, type RefreshSlice } from "../workspace/refreshSlices";
 
 function statusClass(code: string | undefined): string {
@@ -46,20 +53,12 @@ function decisionHasOpenBlockers(d: Record<string, unknown> | null | undefined):
 }
 
 function formatBlockerHint(d: Record<string, unknown>): string {
-  const reasons = Array.isArray(d.blocking_reasons) ? d.blocking_reasons : [];
-  const labels = reasons
-    .map((r) => {
-      if (typeof r === "string") return r;
-      if (r && typeof r === "object") {
-        const o = r as Record<string, unknown>;
-        return String(o.message || o.code || o.reason || "").trim();
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .slice(0, 3);
-  const suffix = labels.length ? `: ${labels.join("; ")}` : "";
-  return `Нельзя утвердить: есть открытые dependency blockers${suffix}. Сначала закройте blockers / upstream decisions.`;
+  const explains = explainDecisionBlockers(d);
+  if (!explains.length) {
+    return "Нельзя утвердить: есть открытые dependency blockers. Сначала закройте зависимости.";
+  }
+  const first = explains[0]!;
+  return `Нельзя утвердить: ${first.title}. ${first.next}`;
 }
 
 function EmptyState(props: {
@@ -96,6 +95,7 @@ export type DecisionPanelProps = {
   error: string | null;
   canApprove: boolean;
   reviewer: string;
+  aiEnabled?: boolean;
   onAnalyze: () => void;
   onDismissError: () => void;
   onOutcome: (outcome: Record<string, unknown>) => void;
@@ -103,6 +103,7 @@ export type DecisionPanelProps = {
   onRefresh: (slices: RefreshSlice[]) => Promise<void>;
   onTransportError: (msg: string) => void;
   runAction: (fn: () => Promise<void>) => Promise<void>;
+  onGoTab?: (tab: "data" | "evidence" | "documents" | "decisions") => void;
 };
 
 export function DecisionPanel(props: DecisionPanelProps) {
@@ -114,6 +115,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
     error,
     canApprove,
     reviewer,
+    aiEnabled = false,
     onAnalyze,
     onDismissError,
     onOutcome,
@@ -121,6 +123,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
     onRefresh,
     onTransportError,
     runAction,
+    onGoTab,
   } = props;
 
   const [formTarget, setFormTarget] = useState<FormTarget>(null);
@@ -320,8 +323,24 @@ export function DecisionPanel(props: DecisionPanelProps) {
     <section className="panel">
       <h2>Решения</h2>
       <p className="muted">
-        Рекомендация ≠ утверждённое решение. Конфликт дозы (15 vs 30 мг) не разрешается автоматически.
+        Сначала закройте блокеры (недостающие данные / конфликты), затем утвердите. Рекомендация системы — не
+        утверждение.
       </p>
+
+      <aside className="ai-role-callout" aria-label="Роль ИИ">
+        <strong>{AI_ROLE_COPY.title}</strong>
+        <p className="muted small">
+          Сейчас ИИ: <strong>{aiEnabled ? "включён" : "выключен"}</strong>
+          {aiEnabled
+            ? " — может предлагать извлечения и формулировки."
+            : " — расчёты и правила работают без LLM."}
+        </p>
+        <ul className="small">
+          {AI_ROLE_COPY.bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      </aside>
 
       {error && (
         <div className="op-error" role="alert">
@@ -360,59 +379,56 @@ export function DecisionPanel(props: DecisionPanelProps) {
               <span className={`status-pill ${statusClass(String(c.severity))}`}>{humanLabel(c.severity)}</span>
               <span className={`status-pill ${statusClass(String(c.status))}`}>{humanLabel(c.status)}</span>
             </div>
-            <h3>QUESTION: Resolve {String(c.field)}?</h3>
-            <p>Evidence: {String(c.evidence || c.required_action || "see sources")}</p>
-            <p>
-              System recommendation:{" "}
-              {String(c.recommendation || "Expert decision required — no auto-resolve")}
-            </p>
-            <p>Status: {humanLabel(c.status)}</p>
-            <p className="muted small">
-              A: <strong>{String(c.value_a)}</strong> ({String(c.source_a)}) · B:{" "}
-              <strong>{String(c.value_b)}</strong> ({String(c.source_b)})
-            </p>
+            <h3>Конфликт: {String(c.field)}</h3>
+            <dl className="decision-facts">
+              <div>
+                <dt>Что не сходится</dt>
+                <dd>
+                  <strong>{String(c.value_a)}</strong> ({String(c.source_a)}) vs{" "}
+                  <strong>{String(c.value_b)}</strong> ({String(c.source_b)})
+                </dd>
+              </div>
+              <div>
+                <dt>Почему важно</dt>
+                <dd>{String(c.evidence || c.required_action || "Нужно экспертное сравнение источников")}</dd>
+              </div>
+              <div>
+                <dt>Что сделать</dt>
+                <dd>
+                  {open
+                    ? "Выберите значение A или B (Утвердить / Изменить). Автоматически не закроется."
+                    : "Конфликт уже закрыт или не в статусе OPEN."}
+                </dd>
+              </div>
+            </dl>
             <div className="header-actions" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 disabled={busy || !open || !canApprove}
                 onClick={() => openForm({ kind: "conflict", id: cid, action: "approve" })}
               >
-                Approve
+                Утвердить
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => openForm({ kind: "conflict", id: cid, action: "reject" })}
               >
-                Reject
+                Отклонить
               </button>
               <button
                 type="button"
                 disabled={busy || !canApprove}
                 onClick={() => openForm({ kind: "conflict", id: cid, action: "modify" })}
               >
-                Modify
+                Изменить
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => openForm({ kind: "conflict", id: cid, action: "request-evidence" })}
               >
-                Request evidence
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onNotice(`Source A: ${String(c.source_a)} = ${String(c.value_a)}`)}
-              >
-                View source A
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onNotice(`Source B: ${String(c.source_b)} = ${String(c.value_b)}`)}
-              >
-                View source B
+                Запросить evidence
               </button>
             </div>
           </div>
@@ -425,13 +441,18 @@ export function DecisionPanel(props: DecisionPanelProps) {
         const status = String(d.status || "").toUpperCase();
         const actionable = !["APPROVED", "REJECTED", "KEEP_CURRENT"].includes(status);
         const blocked = decisionHasOpenBlockers(d);
+        const explains = explainDecisionBlockers(d);
         const recLabel =
-          normalizeDecisionOption((rec?.option ?? rec?.code) as DecisionOptionInput)?.label ||
-          String(rec?.summary || d.recommendation || "—");
+          optionTitle(
+            normalizeDecisionOption((rec?.option ?? rec?.code) as DecisionOptionInput)?.value ||
+              rec?.option ||
+              rec?.summary,
+          ) || "—";
+        const primary = explains[0];
         return (
           <div
             key={did}
-            className={`decision-card ${selectedId === did ? "row-selected" : ""}`}
+            className={`decision-card ${blocked ? "decision-card-blocked" : ""} ${selectedId === did ? "row-selected" : ""}`}
             onClick={() => setSelectedId(did)}
             role="button"
             tabIndex={0}
@@ -439,15 +460,76 @@ export function DecisionPanel(props: DecisionPanelProps) {
               if (e.key === "Enter" || e.key === " ") setSelectedId(did);
             }}
           >
-            <h3>QUESTION: {String(d.question || d.domain || d.id)}</h3>
-            <p className="muted">Evidence: см. decision center / sources</p>
-            <p>
-              System recommendation: {recLabel}
-            </p>
-            <p>Status: {humanLabel(d.status)}</p>
-            {blocked ? (
-              <p className="muted small status-red">Blocked — есть dependency blockers (approve недоступен)</p>
-            ) : null}
+            <div className="header-actions">
+              <span className={`status-pill ${statusClass(status)}`}>{humanLabel(d.status)}</span>
+              <span className="muted small">{domainTitle(d.domain)}</span>
+            </div>
+            <h3>{domainTitle(d.question || d.domain || d.id)}</h3>
+            <dl className="decision-facts">
+              <div>
+                <dt>Рекомендация системы</dt>
+                <dd>
+                  <strong>{recLabel}</strong>
+                  <span className="muted small"> — ещё не утверждено; ИИ/engine только предлагает</span>
+                </dd>
+              </div>
+              {blocked && primary ? (
+                <>
+                  <div>
+                    <dt>Почему нельзя утвердить</dt>
+                    <dd>
+                      <strong>{primary.title}</strong>
+                      <div className="muted small">{primary.why}</div>
+                      {explains.length > 1 ? (
+                        <ul className="small blocker-list">
+                          {explains.slice(1).map((e) => (
+                            <li key={e.code}>{e.title}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Что сделать дальше</dt>
+                    <dd>
+                      {primaryNextAction(explains)}
+                      <div className="header-actions" style={{ marginTop: "0.5rem" }}>
+                        {primary.nextTab && onGoTab ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onGoTab(primary.nextTab!);
+                            }}
+                          >
+                            Перейти: {primary.nextTab === "evidence" ? "Evidence" : primary.nextTab === "data" ? "Данные" : primary.nextTab}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openForm({ kind: "decision", id: did, action: "request-evidence" });
+                          }}
+                        >
+                          Запросить evidence
+                        </button>
+                      </div>
+                    </dd>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <dt>Что сделать</dt>
+                  <dd>
+                    {status === "APPROVED"
+                      ? "Уже утверждено экспертом."
+                      : "Проверьте рекомендацию и нажмите Утвердить, либо Изменить значение."}
+                  </dd>
+                </div>
+              )}
+            </dl>
             <div className="header-actions" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
@@ -455,14 +537,14 @@ export function DecisionPanel(props: DecisionPanelProps) {
                 title={blocked ? formatBlockerHint(d) : undefined}
                 onClick={() => openForm({ kind: "decision", id: did, action: "approve" })}
               >
-                Approve
+                Утвердить
               </button>
               <button
                 type="button"
                 disabled={busy || !actionable}
                 onClick={() => openForm({ kind: "decision", id: did, action: "reject" })}
               >
-                Reject
+                Отклонить
               </button>
               <button
                 type="button"
@@ -470,14 +552,14 @@ export function DecisionPanel(props: DecisionPanelProps) {
                 title={blocked ? formatBlockerHint(d) : undefined}
                 onClick={() => openForm({ kind: "decision", id: did, action: "modify" })}
               >
-                Modify
+                Изменить
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => openForm({ kind: "decision", id: did, action: "request-evidence" })}
               >
-                Request evidence
+                Запросить evidence
               </button>
             </div>
           </div>

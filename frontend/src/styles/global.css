@@ -483,6 +483,95 @@ button.linkish {
   background: #fff;
 }
 
+.decision-card-blocked {
+  border-color: #c98989;
+  background: #fcf7f7;
+}
+
+.decision-facts {
+  margin: 0.5rem 0 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.decision-facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted, #666);
+  margin: 0;
+}
+
+.decision-facts dd {
+  margin: 0.15rem 0 0;
+}
+
+.blocker-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.ai-role-callout {
+  border: 1px solid var(--line);
+  background: #f7f9fb;
+  padding: 0.75rem 0.9rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.ai-role-callout ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 28, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 1rem;
+}
+
+.modal-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  max-width: 32rem;
+  width: 100%;
+  padding: 1.1rem 1.25rem;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.modal-panel label {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.modal-panel input[type="password"],
+.modal-panel input[type="text"] {
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+}
+
+.ai-toggle-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.55rem;
+  grid-template-columns: none !important;
+}
+
+.notice-banner {
+  background: #eef6ee;
+  border: 1px solid #9bb89b;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

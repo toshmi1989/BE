@@ -1,9 +1,30 @@
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { LoginForm } from "./auth/LoginForm";
+import { AiSettingsModal } from "./components/AiSettingsModal";
 import { StudyWorkspace } from "./pages/StudyWorkspace";
+import { useEffect, useState } from "react";
+import { getAiSettings, type AiSettingsView } from "./api/client";
 
 function AppShell() {
   const { loading, authRequired, user, logout, version } = useAuth();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiView, setAiView] = useState<AiSettingsView | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const view = await getAiSettings();
+        if (!cancelled) setAiView(view);
+      } catch {
+        /* optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading]);
 
   if (loading) {
     return (
@@ -30,6 +51,8 @@ function AppShell() {
     );
   }
 
+  const aiOn = Boolean(aiView?.enabled ?? version?.ai_enabled);
+
   return (
     <div className="app-shell app-shell-wide">
       <header className="app-header">
@@ -49,27 +72,39 @@ function AppShell() {
               Preflight
             </p>
           </div>
-          {user && (
-            <div className="auth-user-bar" style={{ textAlign: "right" }}>
+          <div className="auth-user-bar" style={{ textAlign: "right" }}>
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              ИИ: {aiOn ? "вкл" : "выкл"}
+              {aiView?.model ? ` · ${aiView.model}` : ""}
+              {!authRequired && !user ? " · local-dev" : ""}
+            </div>
+            {user ? (
               <div className="muted" style={{ fontSize: "0.9rem" }}>
                 {user.email}
                 {user.role ? ` · ${user.role}` : ""}
               </div>
-              <button type="button" onClick={() => void logout()} style={{ marginTop: "0.35rem" }}>
-                Logout
+            ) : null}
+            <div className="header-actions" style={{ justifyContent: "flex-end", marginTop: "0.35rem" }}>
+              <button type="button" className="secondary" onClick={() => setSettingsOpen(true)}>
+                Настройки
               </button>
+              {user ? (
+                <button type="button" onClick={() => void logout()}>
+                  Logout
+                </button>
+              ) : null}
             </div>
-          )}
-          {!authRequired && !user && version && (
-            <div className="muted" style={{ fontSize: "0.85rem" }}>
-              Local dev · auth off
-            </div>
-          )}
+          </div>
         </div>
       </header>
       <main>
-        <StudyWorkspace />
+        <StudyWorkspace aiEnabledOverride={aiOn} />
       </main>
+      <AiSettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={(view) => setAiView(view)}
+      />
     </div>
   );
 }

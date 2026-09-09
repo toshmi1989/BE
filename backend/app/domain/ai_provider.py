@@ -292,6 +292,87 @@ class LocalAIProvider(AIProvider):
         ) from last_err
 
 
+class OpenAICloudProvider(AIProvider):
+    """OpenAI Chat Completions (default model gpt-4o-mini). Assistive extraction only."""
+
+    name = "openai"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        base_url: str = "https://api.openai.com/v1",
+        timeout: float = 60.0,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+    ) -> None:
+        if not api_key or not str(api_key).strip():
+            raise ValidationError("OpenAI API key required", field="api_key")
+        self.api_key = str(api_key).strip()
+        self.model = model or "gpt-4o-mini"
+        self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+        self.timeout = timeout
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def status(self) -> AIProviderStatus:
+        # Do not probe the network on every status poll (UI settings).
+        # Connectivity is verified on actual extract calls.
+        return AIProviderStatus(
+            enabled=True,
+            provider=self.name,
+            model=self.model,
+            available=True,
+            detail="configured (gpt cloud; assistive only)",
+        )
+
+    def extract_evidence(
+        self, *, task_type: str, chunks: list[ChunkContext], prompt: PromptTemplate
+    ) -> AIExtractionResult:
+        import httpx
+
+        chunks_json = json.dumps([c.model_dump() for c in chunks], ensure_ascii=False)
+        user = prompt.user_template.format(
+            task_type=task_type, chunks_json=chunks_json, focus=""
+        )
+        payload = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": prompt.system},
+                {"role": "user", "content": user},
+            ],
+        }
+        last_err: Exception | None = None
+        for _ in range(2):
+            try:
+                r = httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                r.raise_for_status()
+                body = r.json()
+                content = (
+                    (((body.get("choices") or [{}])[0].get("message") or {}).get("content"))
+                    or ""
+                )
+                parsed = parse_extraction_json(content)
+                return validate_claims_against_chunks(parsed, chunks)
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+        raise ValidationError(
+            f"OpenAI extraction failed: {last_err}", field="ai_provider"
+        ) from last_err
+
+
 def get_ai_provider(
     *,
     enabled: bool,
@@ -302,6 +383,7 @@ def get_ai_provider(
     max_tokens: int,
     temperature: float,
     force_mock: bool = False,
+    api_key: str | None = None,
 ) -> AIProvider:
     if force_mock:
         return MockAIProvider(model=model or "mock-extractor")
@@ -317,5 +399,15 @@ def get_ai_provider(
             max_tokens=max_tokens,
             temperature=temperature,
         )
-    # External intentionally not implemented
+    if provider in {"openai", "cloud", "gpt"}:
+        if not api_key:
+            return DisabledAIProvider()
+        return OpenAICloudProvider(
+            api_key=api_key,
+            model=model or "gpt-4o-mini",
+            base_url=base_url or "https://api.openai.com/v1",
+            timeout=timeout,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
     return DisabledAIProvider()
