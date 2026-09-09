@@ -6,6 +6,7 @@ import {
   getDecisionBlockers,
   getDecisionDependencies,
   getDecisionEvidence,
+  keepCurrentDecisionValue,
   modifyStudyDecision,
   postExpertDecision,
   rejectStudyDecision,
@@ -44,7 +45,12 @@ function statusClass(code: string | undefined): string {
 
 function decisionHasOpenBlockers(d: Record<string, unknown> | null | undefined): boolean {
   if (!d) return false;
-  if (String(d.status || "").toUpperCase() === "BLOCKED") return true;
+  const status = String(d.status || "").toUpperCase();
+  // Terminal expert outcomes are done — don't treat as "blocked path"
+  if (["APPROVED", "REJECTED", "KEEP_CURRENT", "ACCEPTED", "RESOLVED"].includes(status)) {
+    return false;
+  }
+  if (status === "BLOCKED") return true;
   const reasons = d.blocking_reasons;
   if (Array.isArray(reasons) && reasons.length > 0) return true;
   const conflicts = d.blocking_conflicts;
@@ -55,10 +61,10 @@ function decisionHasOpenBlockers(d: Record<string, unknown> | null | undefined):
 function formatBlockerHint(d: Record<string, unknown>): string {
   const explains = explainDecisionBlockers(d);
   if (!explains.length) {
-    return "Нельзя утвердить: есть открытые dependency blockers. Сначала закройте зависимости.";
+    return "Утвердить нельзя: открыты dependency blockers. Можно экспертно задать значение через «Изменить».";
   }
   const first = explains[0]!;
-  return `Нельзя утвердить: ${first.title}. ${first.next}`;
+  return `Утвердить нельзя: ${first.title}. Либо закройте пробел данных, либо нажмите «Изменить» и зафиксируйте опцию экспертно.`;
 }
 
 function EmptyState(props: {
@@ -185,11 +191,13 @@ export function DecisionPanel(props: DecisionPanelProps) {
   }
 
   function openForm(target: NonNullable<FormTarget>) {
-    if (!canApprove && (target.action === "approve" || target.action === "modify")) {
+    if (!canApprove && (target.action === "approve" || target.action === "modify" || target.action === "keep-current")) {
       onNotice("Недостаточно прав (approve_decisions)");
       return;
     }
-    if (target.kind === "decision" && (target.action === "approve" || target.action === "modify")) {
+    // Approve alone is blocked by dependency gaps (backend 422).
+    // Modify / keep-current remain available — expert path for minimal writer flow.
+    if (target.kind === "decision" && target.action === "approve") {
       const d = decisions.find((x) => String(x.id || x.decision_id) === target.id);
       if (d && decisionHasOpenBlockers(d)) {
         onTransportError(formatBlockerHint(d));
@@ -258,7 +266,18 @@ export function DecisionPanel(props: DecisionPanelProps) {
               rationale: values.rationale,
             });
             onOutcome({
-              message: "Decision modified",
+              message: "Decision modified (expert)",
+              recalculation_required: true,
+              affects: ["Protocol"],
+              ...out,
+            });
+          } else if (formTarget.action === "keep-current") {
+            out = await keepCurrentDecisionValue(studyId, did, {
+              reviewer,
+              rationale: values.rationale,
+            });
+            onOutcome({
+              message: "Keep current value",
               recalculation_required: true,
               affects: ["Protocol"],
               ...out,
@@ -323,8 +342,9 @@ export function DecisionPanel(props: DecisionPanelProps) {
     <section className="panel">
       <h2>Решения</h2>
       <p className="muted">
-        Сначала закройте блокеры (недостающие данные / конфликты), затем утвердите. Рекомендация системы — не
-        утверждение.
+        С минимальными вводами: конфликт дозы закрываете явно; Washout/Sampling при пробеле t½/Tmax —
+        через «Изменить и утвердить» (экспертная фиксация). Обычное «Утвердить» доступно после закрытия
+        blockers. Рекомендация системы ≠ утверждение.
       </p>
 
       <aside className="ai-role-callout" aria-label="Роль ИИ">
@@ -439,7 +459,8 @@ export function DecisionPanel(props: DecisionPanelProps) {
         const did = String(d.id || d.decision_id);
         const rec = d.recommendation as Record<string, unknown> | undefined;
         const status = String(d.status || "").toUpperCase();
-        const actionable = !["APPROVED", "REJECTED", "KEEP_CURRENT"].includes(status);
+        const terminal = ["APPROVED", "REJECTED", "KEEP_CURRENT", "ACCEPTED", "RESOLVED"].includes(status);
+        const actionable = !terminal;
         const blocked = decisionHasOpenBlockers(d);
         const explains = explainDecisionBlockers(d);
         const recLabel =
@@ -473,10 +494,19 @@ export function DecisionPanel(props: DecisionPanelProps) {
                   <span className="muted small"> — ещё не утверждено; ИИ/engine только предлагает</span>
                 </dd>
               </div>
-              {blocked && primary ? (
+              {terminal ? (
+                <div>
+                  <dt>Итог</dt>
+                  <dd>
+                    {status === "APPROVED" || status === "KEEP_CURRENT"
+                      ? "Эксперт уже зафиксировал решение. Можно идти дальше по writer-пути."
+                      : "Решение отклонено. Чтобы продолжить — «Изменить и утвердить»."}
+                  </dd>
+                </div>
+              ) : blocked && primary ? (
                 <>
                   <div>
-                    <dt>Почему нельзя утвердить</dt>
+                    <dt>Почему «Утвердить» недоступно</dt>
                     <dd>
                       <strong>{primary.title}</strong>
                       <div className="muted small">{primary.why}</div>
@@ -490,10 +520,26 @@ export function DecisionPanel(props: DecisionPanelProps) {
                     </dd>
                   </div>
                   <div>
-                    <dt>Что сделать дальше</dt>
+                    <dt>Как пройти шаг с минимальными вводами</dt>
                     <dd>
-                      {primaryNextAction(explains)}
+                      <p>
+                        <strong>Быстрый путь:</strong> нажмите «Изменить и утвердить», выберите опцию (
+                        {recLabel}) и укажите rationale — backend это разрешает даже без t½/Tmax.
+                      </p>
+                      <p className="muted small">
+                        Полный путь: {primaryNextAction(explains)} — тогда станет доступно обычное «Утвердить».
+                      </p>
                       <div className="header-actions" style={{ marginTop: "0.5rem" }}>
+                        <button
+                          type="button"
+                          disabled={busy || !canApprove}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openForm({ kind: "decision", id: did, action: "modify" });
+                          }}
+                        >
+                          Изменить и утвердить
+                        </button>
                         {primary.nextTab && onGoTab ? (
                           <button
                             type="button"
@@ -503,18 +549,9 @@ export function DecisionPanel(props: DecisionPanelProps) {
                               onGoTab(primary.nextTab!);
                             }}
                           >
-                            Перейти: {primary.nextTab === "evidence" ? "Evidence" : primary.nextTab === "data" ? "Данные" : primary.nextTab}
+                            Данные / Evidence
                           </button>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openForm({ kind: "decision", id: did, action: "request-evidence" });
-                          }}
-                        >
-                          Запросить evidence
-                        </button>
                       </div>
                     </dd>
                   </div>
@@ -523,9 +560,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
                 <div>
                   <dt>Что сделать</dt>
                   <dd>
-                    {status === "APPROVED"
-                      ? "Уже утверждено экспертом."
-                      : "Проверьте рекомендацию и нажмите Утвердить, либо Изменить значение."}
+                    Проверьте рекомендацию → «Утвердить», либо «Изменить и утвердить» / «Оставить текущее».
                   </dd>
                 </div>
               )}
@@ -541,6 +576,25 @@ export function DecisionPanel(props: DecisionPanelProps) {
               </button>
               <button
                 type="button"
+                disabled={busy || (!actionable && status !== "REJECTED") || !canApprove}
+                title={
+                  blocked
+                    ? "Экспертная фиксация опции при открытых blockers (разрешено backend modify)"
+                    : undefined
+                }
+                onClick={() => openForm({ kind: "decision", id: did, action: "modify" })}
+              >
+                Изменить и утвердить
+              </button>
+              <button
+                type="button"
+                disabled={busy || !actionable || !canApprove}
+                onClick={() => openForm({ kind: "decision", id: did, action: "keep-current" })}
+              >
+                Оставить текущее
+              </button>
+              <button
+                type="button"
                 disabled={busy || !actionable}
                 onClick={() => openForm({ kind: "decision", id: did, action: "reject" })}
               >
@@ -548,14 +602,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={busy || !actionable || !canApprove || blocked}
-                title={blocked ? formatBlockerHint(d) : undefined}
-                onClick={() => openForm({ kind: "decision", id: did, action: "modify" })}
-              >
-                Изменить
-              </button>
-              <button
-                type="button"
+                className="secondary"
                 disabled={busy}
                 onClick={() => openForm({ kind: "decision", id: did, action: "request-evidence" })}
               >
@@ -578,6 +625,14 @@ export function DecisionPanel(props: DecisionPanelProps) {
           }
           busy={busy}
           error={error}
+          warning={
+            formTarget.kind === "decision" &&
+            formTarget.action === "modify" &&
+            formDecision &&
+            decisionHasOpenBlockers(formDecision)
+              ? "Пробелы данных (t½/Tmax) остаются открытыми. Вы фиксируете опцию как экспертное решение — это допустимый путь Writer при минимальных вводах."
+              : null
+          }
           onCancel={() => setFormTarget(null)}
           onSubmit={handleSubmit}
         />

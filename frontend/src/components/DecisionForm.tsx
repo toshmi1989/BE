@@ -5,7 +5,8 @@ export type DecisionFormAction =
   | "reject"
   | "modify"
   | "request-evidence"
-  | "review";
+  | "review"
+  | "keep-current";
 
 export type DecisionFormValues = {
   rationale: string;
@@ -14,7 +15,6 @@ export type DecisionFormValues = {
   evidenceRefs?: string;
 };
 
-/** Backend may send plain strings or `{ code, label }` / `{ value, label }`. */
 export type DecisionOptionInput =
   | string
   | number
@@ -38,11 +38,9 @@ export function normalizeDecisionOption(raw: DecisionOptionInput): DecisionOptio
     return value ? { value, label: value } : null;
   }
   if (typeof raw !== "object") return null;
-  const code =
-    raw.code ?? raw.value ?? raw.option ?? raw.name ?? null;
+  const code = raw.code ?? raw.value ?? raw.option ?? raw.name ?? null;
   const label = raw.label ?? code;
   if (code != null && typeof code === "object") {
-    // Nested object — refuse to stringify as [object Object]
     return null;
   }
   if (label != null && typeof label === "object") {
@@ -71,11 +69,11 @@ export type DecisionFormProps = {
   title?: string;
   options?: DecisionOptionInput[];
   defaultOption?: string;
-  /** When set, form hydrates from this draft (retained across open/close). */
   draft?: Partial<DecisionFormValues> | null;
   onDraftChange?: (draft: DecisionFormValues) => void;
   busy?: boolean;
   error?: string | null;
+  warning?: string | null;
   onSubmit: (values: DecisionFormValues) => void | Promise<void>;
   onCancel: () => void;
   submitLabel?: string;
@@ -84,9 +82,10 @@ export type DecisionFormProps = {
 const ACTION_LABELS: Record<DecisionFormAction, string> = {
   approve: "Утвердить",
   reject: "Отклонить",
-  modify: "Изменить",
+  modify: "Изменить и утвердить",
   "request-evidence": "Запросить evidence",
   review: "Review",
+  "keep-current": "Оставить текущее",
 };
 
 export function validateDecisionForm(
@@ -130,6 +129,7 @@ export function DecisionForm(props: DecisionFormProps) {
     onDraftChange,
     busy,
     error,
+    warning,
     onSubmit,
     onCancel,
     submitLabel,
@@ -182,6 +182,11 @@ export function DecisionForm(props: DecisionFormProps) {
   return (
     <form className="decision-form inline-edit" onSubmit={(e) => void handleSubmit(e)} noValidate>
       <h3>{title || ACTION_LABELS[action]}</h3>
+      {warning ? (
+        <p className="notice-banner" role="status">
+          {warning}
+        </p>
+      ) : null}
       {showOption && (
         <fieldset className="form-grid">
           <legend className="muted small">Выбранное значение</legend>

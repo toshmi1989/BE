@@ -87,7 +87,7 @@ describe("DecisionForm draft retention", () => {
 
   it("blocks submit without required fields", () => {
     const submitted: DecisionFormValues[] = [];
-    render(
+    const { container } = render(
       <DecisionForm
         action="approve"
         options={["A", "B"]}
@@ -98,7 +98,7 @@ describe("DecisionForm draft retention", () => {
       />,
     );
 
-    fireEvent.submit(screen.getByRole("button", { name: /Утвердить/i }).closest("form")!);
+    fireEvent.submit(container.querySelector("form")!);
     expect(submitted).toHaveLength(0);
     expect(screen.getByRole("alert").textContent).toMatch(/обязательн/i);
   });
