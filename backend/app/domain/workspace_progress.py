@@ -189,6 +189,43 @@ def _actionable_blockers(
             }
         )
 
+    # Soft local engine gaps from decisions (do not imply whole-protocol freeze)
+    for d in list_decisions(study_id):
+        domain = str(getattr(d, "domain", "") or "").upper()
+        status = str(getattr(d, "status", "") or "").upper()
+        if domain != "SAMPLING" or status not in {"BLOCKED", "REVIEW_REQUIRED"}:
+            continue
+        gaps = list(getattr(d, "knowledge_gaps", None) or [])
+        reasons = list(getattr(d, "blocking_reasons", None) or [])
+        codes = {
+            str(g.get("code") if isinstance(g, dict) else getattr(g, "code", "") or "")
+            for g in gaps
+        }
+        for r in reasons:
+            if isinstance(r, dict):
+                codes.add(str(r.get("blocking_reason_code") or r.get("code") or ""))
+        if "MISSING_TMAX_FOR_SAMPLING" in codes and not any(
+            b.get("code") == "SAMPLING_NEEDS_EXPECTED_TMAX" for b in blockers
+        ):
+            blockers.append(
+                {
+                    "severity": "WARNING",
+                    "code": "SAMPLING_NEEDS_EXPECTED_TMAX",
+                    "what": "Sampling требует подтверждённого ожидаемого Tmax",
+                    "why": (
+                        "Плановый (expected) Tmax нужен для дизайна забора; "
+                        "наблюдаемый Tmax после исследования — другой параметр. "
+                        "Остальные этапы протокола не заморожены."
+                    ),
+                    "where": "Решения / Sampling",
+                    "action_label": "Найти ожидаемый Tmax",
+                    "tab": "decisions",
+                    "soft_gate": True,
+                    "scope": "ENGINE",
+                    "next_action": "FIND_EXPECTED_TMAX",
+                }
+            )
+
     return blockers
 
 

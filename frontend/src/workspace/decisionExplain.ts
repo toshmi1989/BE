@@ -16,9 +16,10 @@ const GAP_EXPLAIN: Record<string, Omit<BlockerExplain, "code">> = {
     nextTab: "evidence",
   },
   MISSING_TMAX_FOR_SAMPLING: {
-    title: "Нет Tmax",
-    why: "Профиль sampling зависит от Tmax; без него утверждение sampling заблокировано.",
-    next: "Добавьте / подтвердите Tmax из PK-источников или запросите evidence.",
+    title: "Нет ожидаемого (планового) Tmax",
+    why:
+      "Sampling design зависит от ожидаемого Tmax из SmPC/литературы. Без VERIFIED значения система не строит план «как будто Tmax известен». Весь протокол при этом не заморожен.",
+    next: "Нажмите «Найти Tmax»: Research → AI PROPOSAL → экспертная проверка → только тогда Sampling.",
     nextTab: "evidence",
   },
   MISSING_CVINTRA: {

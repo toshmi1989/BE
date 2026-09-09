@@ -32,26 +32,39 @@ def apply_verified_research_to_context(
             continue
         if c.applicability in {"LOW", "NOT_APPLICABLE", "UNKNOWN"}:
             continue
-        if c.field_path == "pk.t_half" and c.measurement:
+        if c.field_path in {"pk.t_half", "pk.expected_t_half"} and c.measurement:
             # Only point values — ranges do not set half_life scalar
             if c.measurement.get("statistic_type") == "RANGE":
                 continue
             if c.value is not None and isinstance(c.value, (int, float)):
                 ctx.half_life = float(c.value)
+                ctx.structured_facts["pk.expected_t_half"] = float(c.value)
                 ctx.structured_facts["pk.t_half"] = float(c.value)
+                ctx.fact_statuses["pk.expected_t_half"] = "VERIFIED"
                 ctx.fact_statuses["pk.t_half"] = "VERIFIED"
+                ctx.fact_sources["pk.expected_t_half"] = "RESEARCH_EVIDENCE"
                 ctx.fact_sources["pk.t_half"] = "RESEARCH_EVIDENCE"
-                applied.append("pk.t_half")
-                # Remove gap if present
+                applied.append("pk.expected_t_half")
                 ctx.knowledge_gaps = [
                     g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_HALF_LIFE_FOR_WASHOUT"
                 ]
-        elif c.field_path == "pk.Tmax" and isinstance(c.value, (int, float)):
-            ctx.tmax = float(c.value)
-            ctx.structured_facts["pk.Tmax"] = float(c.value)
+        elif c.field_path in {"pk.Tmax", "pk.expected_tmax"} and (
+            isinstance(c.value, (int, float))
+            or (isinstance(c.value, str) and c.value.strip())
+            or (c.measurement and c.measurement.get("statistic_type") == "RANGE")
+        ):
+            # Verified expected (planning) Tmax — may be point or range (e.g. 2–4 h)
+            val = c.value
+            if val is None and c.measurement:
+                val = c.measurement.get("range") or c.measurement.get("value")
+            ctx.tmax = val
+            ctx.structured_facts["pk.expected_tmax"] = val
+            ctx.structured_facts["pk.Tmax"] = val
+            ctx.fact_statuses["pk.expected_tmax"] = "VERIFIED"
             ctx.fact_statuses["pk.Tmax"] = "VERIFIED"
+            ctx.fact_sources["pk.expected_tmax"] = "RESEARCH_EVIDENCE"
             ctx.fact_sources["pk.Tmax"] = "RESEARCH_EVIDENCE"
-            applied.append("pk.Tmax")
+            applied.append("pk.expected_tmax")
             ctx.knowledge_gaps = [
                 g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_TMAX_FOR_SAMPLING"
             ]
@@ -79,9 +92,9 @@ def recompute_affected_decisions(
     domains: set[str] = set()
     for fp in applied_fields:
         domains.update(domains_affected_by_field(fp if fp != "cv_intra" else "CVintra"))
-        if fp == "pk.t_half":
+        if fp in {"pk.t_half", "pk.expected_t_half"}:
             domains.update({"WASHOUT", "SAMPLING"})
-        if fp == "pk.Tmax":
+        if fp in {"pk.Tmax", "pk.expected_tmax"}:
             domains.add("SAMPLING")
         if fp == "cv_intra":
             domains.add("DESIGN")

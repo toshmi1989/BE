@@ -369,37 +369,50 @@ def evaluate_sampling(ctx: DecisionContext) -> ProtocolDecision:
         d.knowledge_gaps.append(
             {
                 "code": "MISSING_TMAX_FOR_SAMPLING",
-                "title": "Tmax unavailable for sampling derivation",
+                "title": "Expected (planning) Tmax required for sampling design",
                 "severity": "HIGH",
                 "blocking": True,
+                "soft_gate": True,
+                "scope": "ENGINE",
+                "next_action": "FIND_EXPECTED_TMAX",
+                "note": "Does not freeze the whole protocol — only sampling engine.",
             }
         )
         d.research_tasks.append(
             {
                 "code": "FIND_TMAX_PK",
-                "title": "Research Tmax from official PK / literature",
+                "title": "Find expected Tmax (SmPC → literature → expert verify)",
                 "status": "OPEN",
+                "next_action": "FIND_EXPECTED_TMAX",
             }
         )
     if ctx.half_life is None:
         d.knowledge_gaps.append(
             {
                 "code": "MISSING_HALF_LIFE_FOR_WASHOUT",
-                "title": "Half-life unavailable for sampling terminal-phase assessment",
+                "title": "Expected t½ required for terminal-phase / washout assessment",
                 "severity": "HIGH",
                 "blocking": True,
+                "soft_gate": True,
+                "scope": "ENGINE",
+                "next_action": "FIND_EXPECTED_HALF_LIFE",
             }
         )
 
     report = apply_dependency_blockers(d, ctx)
     blocking = report.blocked
+    soft_only = blocking and all(getattr(b, "soft_gate", False) for b in report.blocking_reasons)
     d.evidence = ev
     d.current_context = {
         "sampling_times": times,
         "total_points": n_points,
         "tmax": ctx.tmax,
+        "tmax_role": "expected_planning",
+        "observed_tmax_not_used": True,
         "half_life": ctx.half_life,
         "invented_timepoints": False,
+        "soft_gate": soft_only,
+        "protocol_frozen": False,
     }
 
     missing = []
@@ -413,10 +426,12 @@ def evaluate_sampling(ctx: DecisionContext) -> ProtocolDecision:
         primary = "STANDARD_PROFILE" if times else "EXPERT_DEFINED"
         rec_status = "BLOCKED"
         conf = "NONE"
+        soft_codes = ", ".join(b.blocking_reason_code for b in report.blocking_reasons)
         rationale = (
-            "Sampling blocked by registered dependencies: "
-            + ", ".join(b.blocking_reason_code for b in report.blocking_reasons)
-            + ". Reference-product dose conflict does not block SAMPLING."
+            f"Sampling design soft-gated ({soft_codes}). "
+            "Requires verified expected (planning) Tmax/t½ from SmPC or literature — "
+            "not an observed post-study Tmax. System did NOT invent timepoints. "
+            "Other protocol steps (documents, extraction, design, population, research) may continue."
         )
     elif times and ctx.tmax is None:
         d.status = "REVIEW_REQUIRED"
@@ -425,7 +440,7 @@ def evaluate_sampling(ctx: DecisionContext) -> ProtocolDecision:
         conf = "LOW"
         rationale = (
             "Existing sampling profile present in study inputs. "
-            "Tmax unavailable — system did NOT invent or replace timepoints."
+            "Expected Tmax unavailable — system did NOT invent or replace timepoints."
         )
     elif not times:
         d.status = "REVIEW_REQUIRED"
@@ -438,7 +453,9 @@ def evaluate_sampling(ctx: DecisionContext) -> ProtocolDecision:
         primary = "STANDARD_PROFILE"
         rec_status = "PARTIALLY_SUPPORTED"
         conf = "MEDIUM"
-        rationale = "Sampling profile present with supporting structured facts."
+        rationale = (
+            "Sampling profile present with verified expected Tmax available for coverage review."
+        )
 
     d.option_matrix = [
         build_option_matrix_row(
@@ -463,8 +480,16 @@ def evaluate_sampling(ctx: DecisionContext) -> ProtocolDecision:
             "non_blocking_issues": [b.to_dict() for b in report.non_blocking_issues],
             "terminal_phase_assessment": "NOT_ASSESSED" if ctx.tmax is None else "REVIEW",
             "tmax_coverage_assessment": "NOT_ASSESSED" if ctx.tmax is None else "REVIEW",
+            "tmax_role": "expected_planning",
             "invented_timepoints": False,
-            "required_action": "Medical writer review",
+            "soft_gate": soft_only,
+            "protocol_frozen": False,
+            "required_action": (
+                "Find and verify expected Tmax"
+                if ctx.tmax is None
+                else "Medical writer review"
+            ),
+            "next_action": "FIND_EXPECTED_TMAX" if ctx.tmax is None else None,
         },
     )
     return _attach(d)

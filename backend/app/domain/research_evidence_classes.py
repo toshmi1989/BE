@@ -108,17 +108,20 @@ MATCH_VALUES: tuple[str, ...] = ("MATCH", "PARTIAL", "MISMATCH", "UNKNOWN")
 
 # Gap code → task type + priority (from decision dependency blockers)
 GAP_TO_TASK: dict[str, dict[str, str]] = {
+    "MISSING_TMAX_FOR_SAMPLING": {
+        "task_type": "FIND_TMAX_PK",
+        "priority": "CRITICAL",
+        "query_type": "PK",
+        # Claim path remains pk.Tmax (legacy); semantically this is expected/planning Tmax
+        "field_path": "pk.Tmax",
+        "planning_role": "expected_tmax",
+    },
     "MISSING_HALF_LIFE_FOR_WASHOUT": {
         "task_type": "FIND_HALF_LIFE_PK",
         "priority": "CRITICAL",
         "query_type": "PK",
         "field_path": "pk.t_half",
-    },
-    "MISSING_TMAX_FOR_SAMPLING": {
-        "task_type": "FIND_TMAX_PK",
-        "priority": "CRITICAL",
-        "query_type": "PK",
-        "field_path": "pk.Tmax",
+        "planning_role": "expected_t_half",
     },
     "MISSING_CVINTRA": {
         "task_type": "FIND_CVINTRA_LITERATURE",

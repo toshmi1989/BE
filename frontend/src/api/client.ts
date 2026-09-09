@@ -1280,10 +1280,61 @@ export function listResearchCenterTasks(studyId: string) {
   return request<Record<string, unknown>>(`/api/research-center/studies/${studyId}/research-tasks`);
 }
 
+export function createResearchCenterTasks(
+  studyId: string,
+  body: {
+    gaps?: Array<{ code: string; title?: string }>;
+    from_decisions?: boolean;
+    use_golden_fixture?: boolean;
+    active_substance?: string;
+    dose?: string;
+    dosage_form?: string;
+    package_id?: string;
+  },
+) {
+  return request<Record<string, unknown>>(`/api/research-center/studies/${studyId}/research-tasks`, {
+    method: "POST",
+    body: JSON.stringify({
+      from_decisions: false,
+      use_golden_fixture: false,
+      ...body,
+    }),
+  });
+}
+
 export function runResearchCenterTask(taskId: string, body?: { use_mock_provider?: boolean }) {
   return request<Record<string, unknown>>(`/api/research-center/research-tasks/${taskId}/run`, {
     method: "POST",
     body: JSON.stringify(body || { use_mock_provider: true }),
+  });
+}
+
+export function getResearchCenterTask(taskId: string) {
+  return request<Record<string, unknown>>(`/api/research-center/research-tasks/${taskId}`);
+}
+
+export function verifyResearchCenterClaim(
+  claimId: string,
+  body: {
+    reviewer: string;
+    applicability?: string;
+    applicability_reason?: string;
+    actor?: string;
+  },
+) {
+  return request<Record<string, unknown>>(`/api/research-center/evidence/${claimId}/verify`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function applyResearchToDecisions(
+  studyId: string,
+  body?: { use_golden_fixture?: boolean; package_id?: string },
+) {
+  return request<Record<string, unknown>>(`/api/research-center/studies/${studyId}/apply-to-decisions`, {
+    method: "POST",
+    body: JSON.stringify({ use_golden_fixture: false, ...body }),
   });
 }
 

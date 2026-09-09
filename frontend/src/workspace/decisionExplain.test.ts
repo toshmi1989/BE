@@ -14,7 +14,9 @@ describe("decisionExplain", () => {
     expect(w.next).toMatch(/SmPC|Evidence|evidence/i);
 
     const s = explainBlocker("MISSING_TMAX_FOR_SAMPLING");
-    expect(s.title).toMatch(/Tmax/i);
+    expect(s.title).toMatch(/ожидаем|Tmax/i);
+    expect(s.why).toMatch(/не заморожен|планов/i);
+    expect(s.next).toMatch(/Найти Tmax|Research/i);
   });
 
   it("explains decision blockers list", () => {

@@ -52,15 +52,18 @@ DECISION_DEPENDENCY_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "SAMPLING": {
         "blocking_conflict_fields": (),  # reference dose does NOT block SAMPLING
+        # Expected (planning) Tmax / t½ — soft local engine gates, not whole-protocol freeze
         "blocking_gap_codes": (
-            "MISSING_TMAX_FOR_SAMPLING",
-            "MISSING_HALF_LIFE_FOR_WASHOUT",  # t½ registered as sampling dependency
+            "MISSING_TMAX_FOR_SAMPLING",  # = missing verified expected Tmax
+            "MISSING_HALF_LIFE_FOR_WASHOUT",  # expected t½ also used for terminal phase
         ),
         "non_blocking_gap_codes": (),
         "context_fields": (
             "sampling.times",
             "sampling.total_points",
+            "pk.expected_tmax",
             "pk.Tmax",
+            "pk.expected_t_half",
             "pk.t_half",
         ),
         "related_nodes": ("sampling", "pk"),
@@ -115,7 +118,9 @@ FIELD_TO_DECISION_DOMAINS: dict[str, tuple[str, ...]] = {
     "half_life": ("WASHOUT", "SAMPLING"),
     "tmax": ("SAMPLING",),
     "pk.Tmax": ("SAMPLING",),
+    "pk.expected_tmax": ("SAMPLING",),
     "Tmax": ("SAMPLING",),
+    "pk.expected_t_half": ("WASHOUT", "SAMPLING"),
     "cv_intra": ("DESIGN",),
     "CVintra": ("DESIGN",),
     "food_condition": ("FOOD",),
@@ -160,9 +165,13 @@ class BlockingReason:
     blocking_reason_code: str
     field_path: str | None = None
     severity: str = "HIGH"
-    kind: str = "CONFLICT"  # CONFLICT|GAP|MISSING_FIELD|EVIDENCE
+    kind: str = "CONFLICT"  # CONFLICT|GAP|MISSING_FIELD|EVIDENCE|KNOWLEDGE_GAP
     reference_id: str | None = None  # conflict_id / gap code / evidence id
     message: str = ""
+    # Soft gate: blocks this engine only — does not mean the whole protocol is frozen
+    soft_gate: bool = False
+    scope: str = "ENGINE"  # ENGINE | PROTOCOL
+    next_action: str | None = None  # e.g. FIND_EXPECTED_TMAX
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -232,9 +241,9 @@ def domains_affected_by_field(field_path: str) -> list[str]:
     # Explicit: reference_product.dose only DESIGN (not all domains)
     if field_path == "reference_product.dose":
         return ["DESIGN"]
-    if field_path in {"t_half", "pk.t_half", "half_life"}:
+    if field_path in {"t_half", "pk.t_half", "pk.expected_t_half", "half_life"}:
         return ["WASHOUT", "SAMPLING"]
-    if field_path in {"tmax", "pk.Tmax", "Tmax"}:
+    if field_path in {"tmax", "pk.Tmax", "pk.expected_tmax", "Tmax"}:
         return ["SAMPLING"]
     return sorted(affected) if affected else sorted(
         FIELD_TO_DECISION_DOMAINS.get(field_path, ())
@@ -303,14 +312,35 @@ def is_decision_blocked(domain: str, ctx: DecisionContext) -> DecisionBlockerRep
         # Evaluate presence: either in ctx.knowledge_gaps OR computable missing state
         present = code in gap_codes_present or _gap_condition(domain, code, ctx)
         if present:
+            soft = code in {
+                "MISSING_TMAX_FOR_SAMPLING",
+                "MISSING_HALF_LIFE_FOR_WASHOUT",
+            }
+            msg = {
+                "MISSING_TMAX_FOR_SAMPLING": (
+                    "Sampling design requires verified expected (planning) Tmax from SmPC/literature — "
+                    "not an observed post-study Tmax. Other protocol steps may continue."
+                ),
+                "MISSING_HALF_LIFE_FOR_WASHOUT": (
+                    "Washout/sampling terminal phase requires verified expected t½. "
+                    "Other protocol steps may continue."
+                ),
+            }.get(code, f"Missing required input: {code}")
+            next_action = {
+                "MISSING_TMAX_FOR_SAMPLING": "FIND_EXPECTED_TMAX",
+                "MISSING_HALF_LIFE_FOR_WASHOUT": "FIND_EXPECTED_HALF_LIFE",
+            }.get(code)
             blocking.append(
                 BlockingReason(
                     blocking_reason_code=code,
                     field_path=_gap_field(code),
                     severity="HIGH",
-                    kind="GAP",
+                    kind="KNOWLEDGE_GAP",
                     reference_id=code,
-                    message=f"Missing required input: {code}",
+                    message=msg,
+                    soft_gate=soft,
+                    scope="ENGINE" if soft else "PROTOCOL",
+                    next_action=next_action,
                 )
             )
 
@@ -338,8 +368,8 @@ def is_decision_blocked(domain: str, ctx: DecisionContext) -> DecisionBlockerRep
 
 def _gap_field(code: str) -> str | None:
     return {
-        "MISSING_HALF_LIFE_FOR_WASHOUT": "pk.t_half",
-        "MISSING_TMAX_FOR_SAMPLING": "pk.Tmax",
+        "MISSING_HALF_LIFE_FOR_WASHOUT": "pk.expected_t_half",
+        "MISSING_TMAX_FOR_SAMPLING": "pk.expected_tmax",
         "MISSING_CVINTRA": "cv_intra",
         "MISSING_MEAL_COMPOSITION": "food.calorie_target",
         "MISSING_ANALYTE": "bioanalysis.analyte",
@@ -347,10 +377,21 @@ def _gap_field(code: str) -> str | None:
 
 
 def _gap_condition(domain: str, code: str, ctx: DecisionContext) -> bool:
+    from app.domain.expected_pk import (
+        resolve_verified_expected_half_life,
+        resolve_verified_expected_tmax,
+    )
+
     if code == "MISSING_HALF_LIFE_FOR_WASHOUT":
-        return ctx.half_life is None
+        if ctx.half_life is not None:
+            return False
+        return (
+            resolve_verified_expected_half_life(ctx.structured_facts, ctx.fact_statuses) is None
+        )
     if code == "MISSING_TMAX_FOR_SAMPLING":
-        return ctx.tmax is None
+        if ctx.tmax is not None:
+            return False
+        return resolve_verified_expected_tmax(ctx.structured_facts, ctx.fact_statuses) is None
     if code == "MISSING_CVINTRA":
         return ctx.cvintra is None
     if code == "MISSING_MEAL_COMPOSITION":

@@ -20,6 +20,7 @@ import {
   type DecisionFormValues,
   type DecisionOptionInput,
 } from "./DecisionForm";
+import { FindExpectedTmaxFlow } from "./FindExpectedTmaxFlow";
 import { humanLabel } from "../writerLabels";
 import {
   AI_ROLE_COPY,
@@ -29,6 +30,19 @@ import {
   primaryNextAction,
 } from "../workspace/decisionExplain";
 import { slicesFromAffects, type RefreshSlice } from "../workspace/refreshSlices";
+
+function needsExpectedTmax(d: Record<string, unknown>): boolean {
+  if (String(d.domain || "").toUpperCase() !== "SAMPLING") return false;
+  const explains = explainDecisionBlockers(d);
+  if (explains.some((e) => e.code === "MISSING_TMAX_FOR_SAMPLING")) return true;
+  const gaps = Array.isArray(d.knowledge_gaps) ? d.knowledge_gaps : [];
+  return gaps.some(
+    (g) =>
+      g &&
+      typeof g === "object" &&
+      String((g as Record<string, unknown>).code || "") === "MISSING_TMAX_FOR_SAMPLING",
+  );
+}
 
 function statusClass(code: string | undefined): string {
   if (!code) return "status-gray";
@@ -529,6 +543,18 @@ export function DecisionPanel(props: DecisionPanelProps) {
                       <p className="muted small">
                         Полный путь: {primaryNextAction(explains)} — тогда станет доступно обычное «Утвердить».
                       </p>
+                      {needsExpectedTmax(d) ? (
+                        <FindExpectedTmaxFlow
+                          studyId={studyId}
+                          reviewer={reviewer}
+                          busy={busy}
+                          onNotice={onNotice}
+                          runAction={runAction}
+                          onDone={async () => {
+                            await onRefresh(["decisions", "progress", "summary"]);
+                          }}
+                        />
+                      ) : null}
                       <div className="header-actions" style={{ marginTop: "0.5rem" }}>
                         <button
                           type="button"

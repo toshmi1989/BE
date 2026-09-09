@@ -905,6 +905,31 @@ button.secondary {
   background: #f5faf6;
 }
 
+.find-tmax-flow {
+  margin-top: 0.75rem;
+}
+
+.ai-proposal-box {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #c5d4c8;
+  background: #f7faf8;
+}
+
+.ai-proposal-box h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.ai-proposal-box ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.ai-proposal-box li {
+  margin-bottom: 0.65rem;
+}
+
 @media (max-width: 900px) {
   .preview-layout {
     grid-template-columns: 1fr;

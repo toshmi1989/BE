@@ -10,6 +10,7 @@ from typing import Any
 
 from app.domain.decision_classes import CRITICAL_CONFLICT_FIELDS
 from app.domain.decision_models import AnalogueStudyEvidence
+from app.domain.expected_pk import resolve_verified_expected_half_life, resolve_verified_expected_tmax
 from app.domain.knowledge_seed import KNOWLEDGE_RULE_SEEDS
 from app.domain.regulatory_interview import INTERVIEW_CLAIM_SEEDS
 from app.domain.study_input_package import StudyInputPackage
@@ -31,8 +32,8 @@ class DecisionContext:
     verified_rules: list[dict[str, Any]] = field(default_factory=list)
     analogue_studies: list[AnalogueStudyEvidence] = field(default_factory=list)
     previous_protocols: list[dict[str, Any]] = field(default_factory=list)
-    half_life: Any = None
-    tmax: Any = None
+    half_life: Any = None  # verified expected t½ for planning
+    tmax: Any = None  # verified expected Tmax for planning (never observed)
     cvintra: Any = None
     study_mutated: bool = False
 
@@ -40,6 +41,8 @@ class DecisionContext:
         d = asdict(self)
         d["analogue_studies"] = [a.to_dict() for a in self.analogue_studies]
         d["study_mutated"] = False
+        d["tmax_role"] = "expected_planning"
+        d["observed_tmax_not_used_for_sampling"] = True
         return d
 
     def has_open_critical_conflict(self) -> bool:
@@ -154,9 +157,9 @@ def build_context_from_package(
         verified_rules=[],  # none auto-verified
         analogue_studies=list(analogues or []),
         previous_protocols=prev,
-        half_life=facts.get("pk.t_half") if statuses.get("pk.t_half") == "VERIFIED" else None,
-        # Boolean presence of t_half candidate is NOT a numeric half-life
-        tmax=None,  # never invent Tmax
+        half_life=resolve_verified_expected_half_life(facts, statuses),
+        # Expected (planning) Tmax only when VERIFIED — never invent; never use observed Tmax
+        tmax=resolve_verified_expected_tmax(facts, statuses),
         cvintra=None,  # never invent CV
         study_mutated=False,
     )

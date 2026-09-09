@@ -300,16 +300,31 @@ def api_coverage(study_id: str) -> dict[str, Any]:
 @router.post("/studies/{study_id}/apply-to-decisions")
 def api_apply_to_decisions(study_id: str, payload: ApplyToDecisionsIn | None = None) -> dict[str, Any]:
     """Apply verified usable research to decision context and recompute affected domains only."""
+    from app.domain.decision_store import get_context
+
     payload = payload or ApplyToDecisionsIn()
-    pkg = load_real_fixture_package(prefer_text_dump=False)
-    pkg.study_id = study_id
-    ctx, previous = recompute_from_package(pkg, study_id=study_id)
-    previous_existing = list_decisions(study_id, package_id=pkg.package_id) or previous
+    package_id = payload.package_id
+    previous_existing = list_decisions(study_id, package_id=package_id)
+
+    if payload.use_golden_fixture:
+        pkg = load_real_fixture_package(prefer_text_dump=False)
+        pkg.study_id = study_id
+        package_id = pkg.package_id
+        ctx, previous = recompute_from_package(pkg, study_id=study_id)
+        previous_existing = list_decisions(study_id, package_id=package_id) or previous
+    else:
+        ctx = get_context(study_id, package_id=package_id)
+        if ctx is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No decision context for study — analyze package or use_golden_fixture=true",
+            )
+
     ctx, applied = apply_verified_research_to_context(ctx, study_id=study_id)
     result = recompute_affected_decisions(ctx, applied_fields=applied, previous=previous_existing)
-    put_context(study_id, ctx, package_id=pkg.package_id)
+    put_context(study_id, ctx, package_id=package_id)
     decisions = result["decisions"]
-    put_decisions(study_id, decisions, package_id=pkg.package_id)
+    put_decisions(study_id, decisions, package_id=package_id)
     return {
         "study_id": study_id,
         "applied_fields": applied,

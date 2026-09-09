@@ -276,6 +276,37 @@ def test_g02_missing_tmax_gap(golden_ctx):
     assert any(g["code"] == "MISSING_TMAX_FOR_SAMPLING" for g in s.knowledge_gaps)
 
 
+def test_g02b_tmax_gap_is_soft_engine_gate(golden_ctx):
+    s = next(d for d in golden_ctx[2] if d.domain == "SAMPLING")
+    assert s.status == "BLOCKED"
+    assert s.current_context.get("protocol_frozen") is False
+    assert s.current_context.get("tmax_role") == "expected_planning"
+    reasons = s.blocking_reasons or []
+    tmax_r = next(
+        (r for r in reasons if r.get("blocking_reason_code") == "MISSING_TMAX_FOR_SAMPLING"),
+        None,
+    )
+    assert tmax_r is not None
+    assert tmax_r.get("soft_gate") is True
+    assert tmax_r.get("scope") == "ENGINE"
+    assert tmax_r.get("next_action") == "FIND_EXPECTED_TMAX"
+    assert "whole protocol" not in (s.recommendation.rationale or "").lower() or "may continue" in (
+        s.recommendation.rationale or ""
+    ).lower()
+
+
+def test_g02c_verified_expected_tmax_unblocks_tmax_gap(golden_ctx):
+    ctx = copy.deepcopy(golden_ctx[1])
+    ctx.structured_facts["pk.expected_tmax"] = "2–4 h"
+    ctx.fact_statuses["pk.expected_tmax"] = "VERIFIED"
+    ctx.tmax = "2–4 h"
+    s = evaluate_sampling(ctx)
+    assert not any(g["code"] == "MISSING_TMAX_FOR_SAMPLING" for g in s.knowledge_gaps)
+    assert not any(
+        r.get("blocking_reason_code") == "MISSING_TMAX_FOR_SAMPLING" for r in (s.blocking_reasons or [])
+    )
+
+
 def test_g03_no_invented_timepoints_in_rationale(golden_ctx):
     s = next(d for d in golden_ctx[2] if d.domain == "SAMPLING")
     assert "invent" not in (s.recommendation.rationale.lower()) or "NOT invent" in s.recommendation.rationale or "did NOT invent" in s.recommendation.rationale
