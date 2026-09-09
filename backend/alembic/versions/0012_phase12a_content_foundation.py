@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column("relative_time_min", sa.Float(), nullable=True),
         sa.Column("duration_min", sa.Float(), nullable=True),
         sa.Column("sequence_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("mandatory", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("mandatory", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("condition", sa.String(length=255), nullable=True),
         sa.Column("rule_ids", sa.JSON(), nullable=False),
         *_PROVENANCE,
