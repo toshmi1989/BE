@@ -78,9 +78,9 @@ def auth_client(monkeypatch):
 
 
 def test_version_022():
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_password_not_plaintext():
@@ -334,7 +334,7 @@ def test_auth_e2e_reopen(auth_client: TestClient):
 def test_health_version(client: TestClient):
     h = client.get("/api/health")
     assert h.status_code == 200
-    assert h.json()["version"] == "0.32.0"
+    assert h.json()["version"] == "0.33.0"
     assert client.get("/api/ready").status_code == 200
 
 

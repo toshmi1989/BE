@@ -1,4 +1,4 @@
-"""Phase 17 — Flush / hydrate Phase 14–16 stores into DB (survives restart)."""
+"""Phase 17/28 — Flush / hydrate Phase 14–16 stores into DB (survives restart)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,23 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.domain.decision_context import DecisionContext, build_context_from_package
+from app.domain.decision_context import build_context_from_package
 from app.domain.decision_engine import recompute_decisions
-from app.domain.decision_store import clear_decision_store, put_context, put_decisions
-from app.domain.sample_size_store import reset_sample_size_store
-from app.domain.statistics_store import reset_statistics_store
+from app.domain.decision_store import (
+    clear_decision_store,
+    get_context,
+    list_analogues,
+    list_decisions,
+    put_context,
+    put_decisions,
+    restore_analogues,
+)
+from app.domain.research_evidence_store import clear_research_evidence_store
+from app.domain.sample_size_store import list_calculations, reset_sample_size_store, restore_calculations
+from app.domain.statistics_store import list_plans, reset_statistics_store, restore_plans
 from app.domain.study_input_package import StudyInputPackage
 from app.domain.study_input_store import clear_store as clear_study_input
 from app.domain.study_input_store import get_package, list_packages, put_package
@@ -25,6 +35,14 @@ from app.domain.study_workspace import (
     restore_audit_timeline,
     restore_protocol_drafts,
     restore_workspace_meta,
+)
+from app.domain.workspace_engine_serde import (
+    collect_research_payload,
+    context_from_dict,
+    protocol_decision_from_dict,
+    restore_research_payload,
+    sample_size_from_dict,
+    statistics_plan_from_dict,
 )
 from app.models.workspace_persistence import (
     WorkspaceAuditEvent,
@@ -51,25 +69,63 @@ def collect_bundle(study_key: str) -> dict[str, Any]:
     drafts = list_protocol_drafts(study_key)
     audit = audit_timeline(study_key)
     package_payload = pkg.to_dict() if pkg else None
+    decisions = list_decisions(study_key)
+    ctx = get_context(study_key)
+    sample_size_payload = [c.to_dict() for c in list_calculations(study_key)]
+    statistics_payload = [p.to_dict() for p in list_plans(study_key)]
+    research_payload = collect_research_payload(study_key)
+    context_payload = ctx.to_dict() if ctx else None
+    decisions_payload = [d.to_dict(for_ui=False) for d in decisions]
+    analogues = [a.to_dict() for a in list_analogues(study_key)]
+    if context_payload is not None:
+        context_payload["analogue_studies"] = analogues
     bundle = {
         "study_key": study_key,
         "package_payload": package_payload,
-        "decisions_payload": [],  # recomputed on hydrate from package (deterministic)
-        "context_payload": None,
-        "sample_size_payload": [],
-        "statistics_payload": [],
+        "decisions_payload": decisions_payload,
+        "context_payload": context_payload,
+        "sample_size_payload": sample_size_payload,
+        "statistics_payload": statistics_payload,
+        "research_payload": research_payload,
         "workspace_meta": {
             "protocol_drafts": drafts,
             "audit": audit,
         },
     }
     bundle["content_hash"] = _json_hash(
-        {"package": package_payload, "drafts": drafts, "audit_ids": [a.get("id") for a in audit]}
+        {
+            "package": package_payload,
+            "drafts": drafts,
+            "audit_ids": [a.get("id") for a in audit],
+            "decisions": decisions_payload,
+            "context": context_payload,
+            "sample_size": sample_size_payload,
+            "statistics": statistics_payload,
+            "research": research_payload,
+        }
     )
     return bundle
 
 
 def persist_workspace_bundle(
+    db: Session,
+    study_key: str,
+    *,
+    organization_id: UUID | None = None,
+) -> WorkspaceStateBag | None:
+    """Idempotent upsert of workspace bag by content_hash.
+
+    Returns None when workspace persistence tables are unavailable (legacy /
+    memory-only test fixtures) so callers can keep using process memory.
+    """
+    try:
+        return _persist_workspace_bundle(db, study_key, organization_id=organization_id)
+    except (OperationalError, ProgrammingError):
+        db.rollback()
+        return None
+
+
+def _persist_workspace_bundle(
     db: Session,
     study_key: str,
     *,
@@ -88,6 +144,35 @@ def persist_workspace_bundle(
                 "package": bundle["package_payload"],
                 "drafts": bundle["workspace_meta"].get("protocol_drafts"),
                 "audit_ids": [a.get("id") for a in (bundle["workspace_meta"].get("audit") or [])],
+                "decisions": bundle["decisions_payload"],
+                "context": bundle["context_payload"],
+                "sample_size": bundle["sample_size_payload"],
+                "statistics": bundle["statistics_payload"],
+                "research": bundle["research_payload"],
+            }
+        )
+    # Preserve engine payloads if memory was cleared but DB still has them
+    if row is not None:
+        if not bundle["decisions_payload"] and row.decisions_payload:
+            bundle["decisions_payload"] = row.decisions_payload
+        if bundle["context_payload"] is None and row.context_payload:
+            bundle["context_payload"] = row.context_payload
+        if not bundle["sample_size_payload"] and row.sample_size_payload:
+            bundle["sample_size_payload"] = row.sample_size_payload
+        if not bundle["statistics_payload"] and row.statistics_payload:
+            bundle["statistics_payload"] = row.statistics_payload
+        if (not bundle["research_payload"] or not (bundle["research_payload"] or {}).get("tasks")) and row.research_payload:
+            bundle["research_payload"] = row.research_payload
+        bundle["content_hash"] = _json_hash(
+            {
+                "package": bundle["package_payload"],
+                "drafts": bundle["workspace_meta"].get("protocol_drafts"),
+                "audit_ids": [a.get("id") for a in (bundle["workspace_meta"].get("audit") or [])],
+                "decisions": bundle["decisions_payload"],
+                "context": bundle["context_payload"],
+                "sample_size": bundle["sample_size_payload"],
+                "statistics": bundle["statistics_payload"],
+                "research": bundle["research_payload"],
             }
         )
     if row and row.content_hash == bundle["content_hash"]:
@@ -101,6 +186,7 @@ def persist_workspace_bundle(
     row.context_payload = bundle["context_payload"]
     row.sample_size_payload = bundle["sample_size_payload"]
     row.statistics_payload = bundle["statistics_payload"]
+    row.research_payload = bundle["research_payload"]
     row.workspace_meta = bundle["workspace_meta"]
     row.content_hash = bundle["content_hash"]
 
@@ -112,15 +198,14 @@ def persist_workspace_bundle(
         ).scalar_one_or_none()
         if existing:
             continue
+        snap_ref = d.get("based_on_snapshot")
         db.add(
             WorkspaceProtocolDraftRecord(
                 protocol_id=d["protocol_id"],
                 study_key=study_key,
                 organization_id=organization_id,
                 version=int(d["version"]),
-                snapshot_id=d.get("based_on_snapshot")
-                if isinstance(d.get("based_on_snapshot"), str)
-                else None,
+                snapshot_id=snap_ref if isinstance(snap_ref, str) and str(snap_ref).startswith("SNAP") else None,
                 status=d.get("status") or "REVIEW",
                 created_by=d.get("created_by") or "system",
                 based_on={
@@ -166,9 +251,13 @@ def persist_workspace_bundle(
 
 def hydrate_workspace_bundle(db: Session, study_key: str, *, clear_memory: bool = True) -> bool:
     """Load bag from DB into process memory. Returns False if missing."""
-    row = db.execute(
-        select(WorkspaceStateBag).where(WorkspaceStateBag.study_key == study_key)
-    ).scalar_one_or_none()
+    try:
+        row = db.execute(
+            select(WorkspaceStateBag).where(WorkspaceStateBag.study_key == study_key)
+        ).scalar_one_or_none()
+    except (OperationalError, ProgrammingError):
+        db.rollback()
+        return False
     if row is None:
         return False
     if clear_memory:
@@ -177,7 +266,12 @@ def hydrate_workspace_bundle(db: Session, study_key: str, *, clear_memory: bool 
         reset_statistics_store()
         clear_decision_store()
         clear_study_input()
+        clear_research_evidence_store()
 
+    return _apply_row_to_memory(db, study_key, row)
+
+
+def _apply_row_to_memory(db: Session, study_key: str, row: WorkspaceStateBag) -> bool:
     pkg = None
     if row.package_payload:
         pkg = StudyInputPackage.from_dict(row.package_payload)
@@ -225,14 +319,63 @@ def hydrate_workspace_bundle(db: Session, study_key: str, *, clear_memory: bool 
                 ],
             )
 
-    # Recompute recommendations from package (deterministic; never auto-APPROVED)
-    if pkg:
+    # Restore engine state exactly when payloads exist (do not recompute over APPROVED).
+    if row.decisions_payload:
+        restored_decisions = [
+            protocol_decision_from_dict(d) for d in row.decisions_payload if isinstance(d, dict)
+        ]
+        put_decisions(study_key, restored_decisions, package_id=pkg.package_id if pkg else None)
+    elif pkg:
         ctx = build_context_from_package(pkg, study_id=study_key)
         put_context(study_key, ctx, package_id=pkg.package_id)
-        decisions = recompute_decisions(ctx)
-        put_decisions(study_key, decisions, package_id=pkg.package_id)
+        put_decisions(study_key, recompute_decisions(ctx), package_id=pkg.package_id)
+
+    if row.context_payload and isinstance(row.context_payload, dict):
+        ctx = context_from_dict(row.context_payload)
+        put_context(study_key, ctx, package_id=pkg.package_id if pkg else None)
+        restore_analogues(study_key, ctx.analogue_studies)
+    elif pkg and get_context(study_key) is None:
+        ctx = build_context_from_package(pkg, study_id=study_key)
+        put_context(study_key, ctx, package_id=pkg.package_id)
+
+    if row.sample_size_payload:
+        restore_calculations(
+            [sample_size_from_dict(c) for c in row.sample_size_payload if isinstance(c, dict)]
+        )
+    if row.statistics_payload:
+        restore_plans(
+            [statistics_plan_from_dict(p) for p in row.statistics_payload if isinstance(p, dict)]
+        )
+    if row.research_payload:
+        restore_research_payload(study_key, row.research_payload)
 
     return True
+
+
+def find_study_key_for_sample_size(db: Session, calculation_id: str) -> str | None:
+    try:
+        rows = db.execute(select(WorkspaceStateBag)).scalars().all()
+    except (OperationalError, ProgrammingError):
+        db.rollback()
+        return None
+    for row in rows:
+        for calc in row.sample_size_payload or []:
+            if isinstance(calc, dict) and calc.get("id") == calculation_id:
+                return row.study_key
+    return None
+
+
+def find_study_key_for_statistics(db: Session, plan_id: str) -> str | None:
+    try:
+        rows = db.execute(select(WorkspaceStateBag)).scalars().all()
+    except (OperationalError, ProgrammingError):
+        db.rollback()
+        return None
+    for row in rows:
+        for plan in row.statistics_payload or []:
+            if isinstance(plan, dict) and plan.get("id") == plan_id:
+                return row.study_key
+    return None
 
 
 def simulate_process_restart(db: Session, study_key: str) -> bool:

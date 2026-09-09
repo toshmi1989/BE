@@ -652,8 +652,8 @@ def test_q02_dependency_logic_works_ai_off(golden):
 
 
 def test_q03_version_0161():
-    assert get_settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert get_settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 # ---------------------------------------------------------------------------

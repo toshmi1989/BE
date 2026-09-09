@@ -883,9 +883,9 @@ def test_ac25_conflicting_acceptance():
 
 
 def test_ac26_version_021():
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
     assert METHODOLOGY_VERSION == "0.20.0"  # statistics methodology pin (Phase 15.5)
     assert STATISTICS_ENGINE_VERSION.startswith("STATISTICS_ENGINE")
 

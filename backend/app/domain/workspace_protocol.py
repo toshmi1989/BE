@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.domain.exceptions import ValidationError
+from app.domain.protocol_dependency_stale import detect_stale_protocol_dependencies
 from app.domain.study_workspace import append_audit, build_preflight, list_protocol_drafts
 from app.domain.workspace_snapshots import latest_snapshot
 from app.models.workspace_persistence import WorkspaceProtocolArtifact, WorkspaceProtocolDraftRecord
@@ -108,12 +109,21 @@ def build_preview_from_draft(
         },
     }
 
+    mem_draft = mem[-1] if mem else None
+    current_snap_id = (snap or {}).get("snapshot_id")
+    stale = detect_stale_protocol_dependencies(
+        study_key,
+        draft=mem_draft,
+        current_snapshot_id=current_snap_id,
+        current_snapshot_version=(snap or {}).get("version"),
+    )
+
     return {
         "study_id": study_key,
-        "protocol_id": draft_row.protocol_id if draft_row else (mem[-1]["protocol_id"] if mem else None),
-        "version": draft_row.version if draft_row else (mem[-1].get("version") if mem else None),
-        "status": draft_row.status if draft_row else (mem[-1].get("status") if mem else "DRAFT"),
-        "snapshot_id": (draft_row.snapshot_id if draft_row else None) or (snap or {}).get("snapshot_id"),
+        "protocol_id": draft_row.protocol_id if draft_row else (mem_draft["protocol_id"] if mem_draft else None),
+        "version": draft_row.version if draft_row else (mem_draft.get("version") if mem_draft else None),
+        "status": draft_row.status if draft_row else (mem_draft.get("status") if mem_draft else "DRAFT"),
+        "snapshot_id": (draft_row.snapshot_id if draft_row else None) or current_snap_id,
         "snapshot_version": (snap or {}).get("version"),
         "toc": [{"code": s["code"], "title": s["title"]} for s in sections],
         "sections": sections,
@@ -121,7 +131,8 @@ def build_preview_from_draft(
         "field_bindings": field_bindings,
         "source": "ProtocolDraft+CanonicalSnapshot",
         "legacy_project_path": False,
-        "stale_template_values": False,
+        "stale_template_values": bool(stale.get("stale")),
+        "stale_dependencies": stale,
     }
 
 
@@ -149,7 +160,23 @@ def generate_docx_artifact(
     force_warnings_ok: bool = False,
 ) -> dict[str, Any]:
     """Preflight → render → store artifact. Download must serve stored bytes."""
+    # Always regenerate server-side preflight; never trust client version state.
     pf = build_preflight(study_key)
+    snap = latest_snapshot(db, study_key)
+    mem = list_protocol_drafts(study_key)
+    mem_draft = mem[-1] if mem else None
+    stale = detect_stale_protocol_dependencies(
+        study_key,
+        draft=mem_draft,
+        current_snapshot_id=(snap or {}).get("snapshot_id"),
+        current_snapshot_version=(snap or {}).get("version"),
+    )
+    if stale.get("stale"):
+        raise ValidationError(
+            "Protocol dependencies are stale — regenerate draft before DOCX",
+            field="protocol_dependencies",
+            details={"stale_dependencies": stale, "critical_blockers": pf.get("critical_blockers")},
+        )
     if pf.get("critical_blockers"):
         raise ValidationError(
             "CRITICAL blockers present — DOCX generation disabled",
@@ -164,8 +191,17 @@ def generate_docx_artifact(
         )
 
     preview = build_preview_from_draft(db, study_key)
+    if preview.get("stale_template_values"):
+        raise ValidationError(
+            "Protocol preview reports stale dependencies — DOCX blocked",
+            field="protocol_dependencies",
+            details={"stale_dependencies": preview.get("stale_dependencies")},
+        )
     protocol_id = preview.get("protocol_id") or f"PROT-{study_key}-1"
-    snap_id = preview.get("snapshot_id")
+    snap_id = preview.get("snapshot_id") or (snap or {}).get("snapshot_id")
+    decision_set = list((mem_draft or {}).get("based_on_decisions") or [])
+    statistics_version = (mem_draft or {}).get("based_on_statistics")
+    sample_size_version = (mem_draft or {}).get("based_on_sample_size")
 
     doc = DocxDocument()
     doc.add_heading(f"Protocol Draft — {study_key}", level=0)
@@ -208,9 +244,9 @@ def generate_docx_artifact(
         generated_by=created_by,
         generated_at=datetime.now(timezone.utc),
         snapshot_id=snap_id,
-        decision_set=[],
-        statistics_version=None,
-        sample_size_version=None,
+        decision_set=decision_set,
+        statistics_version=statistics_version,
+        sample_size_version=sample_size_version,
     )
     db.add(row)
     db.commit()

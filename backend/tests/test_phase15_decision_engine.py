@@ -431,7 +431,7 @@ def test_q01_ai_off(client: TestClient):
 
 
 def test_q02_version_0161():
-    assert get_settings().app_version == "0.32.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_r01_mock_ai_cannot_approve(golden_ctx):

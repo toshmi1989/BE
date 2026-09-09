@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.db import get_db
 from app.domain.decision_context import build_context_from_package
 from app.domain.decision_dependency import dependencies_for_domain, is_decision_blocked
 from app.domain.decision_engine import (
@@ -37,6 +39,8 @@ from app.domain.decision_store import (
 )
 from app.domain.study_input_pipeline import load_real_fixture_package
 from app.domain.study_input_store import get_package, put_package
+from app.domain.workspace_authority import after_mutation, ensure_db_authoritative
+from app.schemas.writer_phase28 import DecisionActionResponse, DecisionListResponse
 
 
 router = APIRouter(prefix="/decision-center", tags=["decision-center"])
@@ -100,7 +104,12 @@ def _dec(decision_id: str):
 
 
 @router.post("/studies/{study_id}/decisions/recompute")
-def api_recompute(study_id: str, payload: RecomputeIn | None = None) -> dict[str, Any]:
+def api_recompute(
+    study_id: str,
+    payload: RecomputeIn | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     payload = payload or RecomputeIn()
     if payload.use_golden_fixture or not payload.package_id:
         pkg = load_real_fixture_package(prefer_text_dump=False)
@@ -121,6 +130,7 @@ def api_recompute(study_id: str, payload: RecomputeIn | None = None) -> dict[str
     decisions = recompute_decisions(ctx, previous=previous, domains=payload.domains)
     put_context(study_id, ctx, package_id=pkg.package_id)
     put_decisions(study_id, decisions, package_id=pkg.package_id)
+    after_mutation(db, study_id)
     return {
         "study_id": study_id,
         "package_id": pkg.package_id,
@@ -131,12 +141,17 @@ def api_recompute(study_id: str, payload: RecomputeIn | None = None) -> dict[str
     }
 
 
-@router.get("/studies/{study_id}/decisions")
-def api_list(study_id: str, package_id: str | None = None) -> dict[str, Any]:
+@router.get("/studies/{study_id}/decisions", response_model=DecisionListResponse)
+def api_list(
+    study_id: str,
+    package_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     return decision_center_summary(study_id, package_id=package_id)
 
 
-@router.get("/studies/{study_id}/decisions/{decision_id}")
+@router.get("/studies/{study_id}/decisions/{decision_id}", response_model=DecisionActionResponse)
 def api_get(study_id: str, decision_id: str) -> dict[str, Any]:
     return _dec(decision_id).to_dict(for_ui=True)
 
@@ -210,8 +225,14 @@ def api_applicability(study_id: str, decision_id: str) -> dict[str, Any]:
     }
 
 
-@router.post("/studies/{study_id}/decisions/{decision_id}/approve")
-def api_approve(study_id: str, decision_id: str, payload: ExpertActionIn) -> dict[str, Any]:
+@router.post("/studies/{study_id}/decisions/{decision_id}/approve", response_model=DecisionActionResponse)
+def api_approve(
+    study_id: str,
+    decision_id: str,
+    payload: ExpertActionIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     if payload.actor:
         try:
             ai_cannot_approve(_dec(decision_id), actor=payload.actor)
@@ -222,7 +243,7 @@ def api_approve(study_id: str, decision_id: str, payload: ExpertActionIn) -> dic
     if not opt:
         raise HTTPException(status_code=422, detail="selected_option required")
     try:
-        return approve_decision(
+        out = approve_decision(
             d,
             reviewer=payload.reviewer,
             selected_option=opt,
@@ -231,14 +252,22 @@ def api_approve(study_id: str, decision_id: str, payload: ExpertActionIn) -> dic
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id)
+    return out
 
 
-@router.post("/studies/{study_id}/decisions/{decision_id}/keep-current")
-def api_keep_current(study_id: str, decision_id: str, payload: KeepCurrentIn) -> dict[str, Any]:
+@router.post("/studies/{study_id}/decisions/{decision_id}/keep-current", response_model=DecisionActionResponse)
+def api_keep_current(
+    study_id: str,
+    decision_id: str,
+    payload: KeepCurrentIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     if payload.actor and str(payload.actor).upper() in {"AI", "MOCKAI", "MOCK_AI"}:
         raise HTTPException(status_code=403, detail="AI cannot approve/keep-current decisions")
     try:
-        return keep_current_value(
+        out = keep_current_value(
             _dec(decision_id),
             reviewer=payload.reviewer,
             rationale=payload.rationale,
@@ -246,24 +275,40 @@ def api_keep_current(study_id: str, decision_id: str, payload: KeepCurrentIn) ->
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id)
+    return out
 
 
-@router.post("/studies/{study_id}/decisions/{decision_id}/reject")
-def api_reject(study_id: str, decision_id: str, payload: ExpertActionIn) -> dict[str, Any]:
+@router.post("/studies/{study_id}/decisions/{decision_id}/reject", response_model=DecisionActionResponse)
+def api_reject(
+    study_id: str,
+    decision_id: str,
+    payload: ExpertActionIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     if payload.actor and str(payload.actor).upper() in {"AI", "MOCKAI", "MOCK_AI"}:
         raise HTTPException(status_code=403, detail="AI cannot reject/approve decisions")
     try:
-        return reject_decision(_dec(decision_id), reviewer=payload.reviewer, rationale=payload.rationale)
+        out = reject_decision(_dec(decision_id), reviewer=payload.reviewer, rationale=payload.rationale)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id)
+    return out
 
 
-@router.post("/studies/{study_id}/decisions/{decision_id}/modify")
-def api_modify(study_id: str, decision_id: str, payload: ModifyIn) -> dict[str, Any]:
+@router.post("/studies/{study_id}/decisions/{decision_id}/modify", response_model=DecisionActionResponse)
+def api_modify(
+    study_id: str,
+    decision_id: str,
+    payload: ModifyIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     if payload.actor and str(payload.actor).upper() in {"AI", "MOCKAI", "MOCK_AI"}:
         raise HTTPException(status_code=403, detail="AI cannot modify decisions")
     try:
-        return modify_decision(
+        out = modify_decision(
             _dec(decision_id),
             reviewer=payload.reviewer,
             selected_option=payload.selected_option,
@@ -271,30 +316,45 @@ def api_modify(study_id: str, decision_id: str, payload: ModifyIn) -> dict[str, 
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id)
+    return out
 
 
 @router.post("/studies/{study_id}/decisions/invalidate")
-def api_invalidate(study_id: str, payload: InvalidateIn) -> dict[str, Any]:
+def api_invalidate(
+    study_id: str,
+    payload: InvalidateIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     decisions = list_decisions(study_id, package_id=payload.package_id)
     result = invalidate_on_upstream_change(decisions, changed_field=payload.changed_field)
     put_decisions(study_id, decisions, package_id=payload.package_id)
+    after_mutation(db, study_id)
     return result
 
 
 @router.post("/studies/{study_id}/analogues", status_code=201)
-def api_add_analogue(study_id: str, payload: AnalogueIn) -> dict[str, Any]:
+def api_add_analogue(
+    study_id: str,
+    payload: AnalogueIn,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     an = AnalogueStudyEvidence(**payload.model_dump())
     add_analogue(study_id, an)
+    after_mutation(db, study_id)
     return an.to_dict()
 
 
 @router.get("/studies/{study_id}/analogues")
-def api_list_analogues(study_id: str) -> list[dict[str, Any]]:
+def api_list_analogues(study_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    ensure_db_authoritative(db, study_id)
     return [a.to_dict() for a in list_analogues(study_id)]
 
 
 @router.post("/fixtures/updcb-real/recompute", status_code=201)
-def api_golden_recompute() -> dict[str, Any]:
+def api_golden_recompute(db: Session = Depends(get_db)) -> dict[str, Any]:
     clear_decision_store()
     pkg = load_real_fixture_package(prefer_text_dump=False)
     put_package(pkg)
@@ -303,6 +363,7 @@ def api_golden_recompute() -> dict[str, Any]:
     ctx, decisions = recompute_from_package(pkg, study_id=study_id)
     put_context(study_id, ctx, package_id=pkg.package_id)
     put_decisions(study_id, decisions, package_id=pkg.package_id)
+    after_mutation(db, study_id)
     by_domain = {d.domain: d for d in decisions}
     return {
         "study_id": study_id,

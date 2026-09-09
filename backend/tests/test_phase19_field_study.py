@@ -1,4 +1,4 @@
-"""Phase 19 — Real package field study infrastructure (0.32.0)."""
+"""Phase 19 — Real package field study infrastructure (0.33.0)."""
 
 from __future__ import annotations
 
@@ -30,9 +30,9 @@ def setup_function() -> None:
 
 
 def test_version_0_24_0() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_real_population_does_not_meet_10_and_not_synthetic() -> None:
@@ -135,7 +135,7 @@ def test_field_study_api_routes() -> None:
     client = TestClient(create_app())
     h = client.get("/api/health")
     assert h.status_code == 200
-    assert h.json()["version"] == "0.32.0"
+    assert h.json()["version"] == "0.33.0"
 
     pop = client.get("/api/field-study/population-status")
     assert pop.status_code == 200

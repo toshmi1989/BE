@@ -1,12 +1,15 @@
-"""Phase 15.4 — Sample Size Engine API (study-scoped)."""
+"""Phase 15.4 / 28 — Sample Size Engine API (study-scoped, DB-persisted)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.db import get_db
+from app.domain import sample_size_review as review_svc
 from app.domain.decision_store import get_context
 from app.domain.exceptions import ValidationError
 from app.domain.sample_size_engine import calculate_sample_size_authoritative, ui_sample_size_panel
@@ -16,7 +19,9 @@ from app.domain.sample_size_store import (
     get_calculation,
     list_calculations,
 )
-from app.domain import sample_size_review as review_svc
+from app.domain.workspace_authority import after_mutation, ensure_db_authoritative
+from app.domain.workspace_persistence import find_study_key_for_sample_size
+from app.schemas.writer_phase28 import SampleSizePanelResponse
 
 router = APIRouter(tags=["sample-size"])
 
@@ -62,8 +67,24 @@ def _ctx(study_id: str) -> dict[str, Any] | None:
         return None
 
 
+def _hydrate_calc(db: Session, calculation_id: str):
+    rec = get_calculation(calculation_id)
+    if rec is not None:
+        return rec
+    study_key = find_study_key_for_sample_size(db, calculation_id)
+    if study_key:
+        ensure_db_authoritative(db, study_key)
+        return get_calculation(calculation_id)
+    return None
+
+
 @router.post("/studies/{study_id}/sample-size/calculate")
-def calculate(study_id: str, payload: CalculateRequest) -> dict[str, Any]:
+def calculate(
+    study_id: str,
+    payload: CalculateRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     try:
         rec = calculate_sample_size_authoritative(
             study_id=study_id,
@@ -94,11 +115,13 @@ def calculate(study_id: str, payload: CalculateRequest) -> dict[str, Any]:
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
+    after_mutation(db, study_id)
     return rec.to_dict()
 
 
 @router.get("/studies/{study_id}/sample-size/calculations")
-def list_calcs(study_id: str) -> dict[str, Any]:
+def list_calcs(study_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     rows = list_calculations(study_id)
     return {
         "study_id": study_id,
@@ -107,51 +130,68 @@ def list_calcs(study_id: str) -> dict[str, Any]:
     }
 
 
-@router.get("/studies/{study_id}/sample-size/panel")
-def sample_size_panel(study_id: str) -> dict[str, Any]:
+@router.get("/studies/{study_id}/sample-size/panel", response_model=SampleSizePanelResponse)
+def sample_size_panel(study_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    ensure_db_authoritative(db, study_id)
     return ui_sample_size_panel(study_id, context=_ctx(study_id))
 
 
 @router.get("/sample-size/calculations/{calculation_id}")
-def get_calc(calculation_id: str) -> dict[str, Any]:
-    rec = get_calculation(calculation_id)
+def get_calc(calculation_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    rec = _hydrate_calc(db, calculation_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Calculation not found")
     return rec.to_dict()
 
 
 @router.get("/sample-size/calculations/{calculation_id}/inputs")
-def get_inputs(calculation_id: str) -> dict[str, Any]:
-    rec = get_calculation(calculation_id)
+def get_inputs(calculation_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    rec = _hydrate_calc(db, calculation_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Calculation not found")
     return calculation_inputs_view(rec)
 
 
 @router.get("/sample-size/calculations/{calculation_id}/provenance")
-def get_provenance(calculation_id: str) -> dict[str, Any]:
-    rec = get_calculation(calculation_id)
+def get_provenance(calculation_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    rec = _hydrate_calc(db, calculation_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Calculation not found")
     return calculation_provenance_view(rec)
 
 
 @router.post("/sample-size/calculations/{calculation_id}/request-review")
-def request_review(calculation_id: str, payload: ReviewRequest) -> dict[str, Any]:
+def request_review(
+    calculation_id: str,
+    payload: ReviewRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rec = _hydrate_calc(db, calculation_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Calculation not found")
     try:
-        return review_svc.request_review(
+        out = review_svc.request_review(
             calculation_id, reviewer=payload.reviewer, comment=payload.comment
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
+    after_mutation(db, rec.study_id)
+    return out
 
 
 @router.post("/sample-size/calculations/{calculation_id}/approve")
-def approve(calculation_id: str, payload: ReviewRequest) -> dict[str, Any]:
+def approve(
+    calculation_id: str,
+    payload: ReviewRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     if not payload.decision:
         raise HTTPException(status_code=400, detail="decision required")
+    rec = _hydrate_calc(db, calculation_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Calculation not found")
     try:
-        return review_svc.approve_calculation(
+        out = review_svc.approve_calculation(
             calculation_id,
             reviewer=payload.reviewer,
             decision=payload.decision,
@@ -160,13 +200,24 @@ def approve(calculation_id: str, payload: ReviewRequest) -> dict[str, Any]:
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
+    after_mutation(db, rec.study_id)
+    return out
 
 
 @router.post("/sample-size/calculations/{calculation_id}/reject")
-def reject(calculation_id: str, payload: ReviewRequest) -> dict[str, Any]:
+def reject(
+    calculation_id: str,
+    payload: ReviewRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    rec = _hydrate_calc(db, calculation_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Calculation not found")
     try:
-        return review_svc.reject_calculation(
+        out = review_svc.reject_calculation(
             calculation_id, reviewer=payload.reviewer, comment=payload.comment
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
+    after_mutation(db, rec.study_id)
+    return out

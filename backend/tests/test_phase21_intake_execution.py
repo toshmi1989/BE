@@ -1,4 +1,4 @@
-"""Phase 21 — Real intake & writer session execution (0.32.0). No fabricated data."""
+"""Phase 21 — Real intake & writer session execution (0.33.0). No fabricated data."""
 
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ def setup_function() -> None:
 
 
 def test_version_0_26_0() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 def test_no_fabricated_packages_still_below_10() -> None:
@@ -110,7 +110,7 @@ def test_production_gate_not_ready() -> None:
 
 def test_api_status_and_intake() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.32.0"
+    assert client.get("/api/health").json()["version"] == "0.33.0"
     s = client.get("/api/field-study/status")
     assert s.status_code == 200
     body = s.json()

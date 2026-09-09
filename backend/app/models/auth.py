@@ -76,10 +76,10 @@ class OrgMembership(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
 
 class WorkspaceStudy(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """Canonical workspace study keyed by stable study_key."""
+    """Canonical workspace study keyed by globally unique study_key."""
 
     __tablename__ = "workspace_studies"
-    __table_args__ = (UniqueConstraint("organization_id", "study_key", name="uq_org_study_key"),)
+    __table_args__ = (UniqueConstraint("study_key", name="uq_workspace_study_key_global"),)
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("workspace_organizations.id", ondelete="CASCADE"), nullable=False, index=True
@@ -89,9 +89,12 @@ class WorkspaceStudy(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     sponsor: Mapped[str | None] = mapped_column(String(255), nullable=True)
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     dose: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    lifecycle: Mapped[str] = mapped_column(String(64), nullable=False, default="DRAFT")
+    lifecycle: Mapped[str] = mapped_column(String(64), nullable=False, default="DRAFT", index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    readiness_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    readiness_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
     )

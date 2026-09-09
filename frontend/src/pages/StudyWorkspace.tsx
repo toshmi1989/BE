@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getStudyWorkspace,
   getStudyConflicts,
@@ -17,12 +17,7 @@ import {
   uploadWorkspaceDocument,
   classifyWorkspaceDocument,
   reviewCanonicalFact,
-  requestDecisionEvidence,
-  postExpertDecision,
   listStudyDecisions,
-  approveStudyDecision,
-  rejectStudyDecision,
-  modifyStudyDecision,
   getWorkspaceProtocolPreview,
   generateWorkspaceDocx,
   listProtocolDrafts,
@@ -35,6 +30,10 @@ import {
   downloadWorkspaceArtifactUrl,
   listWorkspaceSnapshots,
 } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { DecisionForm } from "../components/DecisionForm";
+import { DecisionPanel } from "../components/DecisionPanel";
+import { StudyList } from "../components/StudyList";
 import { Dashboard } from "./Dashboard";
 import { ControlledBetaDashboard } from "./ControlledBetaDashboard";
 import { computeNextAction, fromBackendPrimary, normalizeTab, type NavId } from "../nextAction";
@@ -46,6 +45,22 @@ import {
   isDemoStudy,
   stepStatusLabel,
 } from "../writerLabels";
+import { canPermission } from "../workspace/permissions";
+import {
+  clearOpError,
+  initialOpState,
+  setOpBusy,
+  setOpError,
+  type OpKey,
+} from "../workspace/opState";
+import {
+  ALL_SLICES,
+  type RefreshSlice,
+} from "../workspace/refreshSlices";
+import {
+  collectWorkflowStepErrors,
+  formatWorkflowStepErrors,
+} from "../workspace/workflowSteps";
 
 const PRIMARY_NAV: Array<{ id: NavId; label: string }> = [
   { id: "overview", label: "Обзор" },
@@ -137,13 +152,22 @@ function BlockerCard(props: {
 }
 
 export function StudyWorkspace() {
+  const { authRequired, user } = useAuth();
+  const canApproveDecisions = canPermission({
+    authRequired,
+    role: user?.role,
+    permission: "approve_decisions",
+  });
+  const reviewer = user?.email || user?.display_name || "writer";
+
   const [tab, setTab] = useState<NavId>("overview");
   const [advancedPane, setAdvancedPane] = useState<"menu" | "beta" | "legacy">("menu");
-  const [busy, setBusy] = useState(false);
+  const [ops, setOps] = useState(initialOpState);
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [analyzeStage, setAnalyzeStage] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [workflowStepErrors, setWorkflowStepErrors] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Record<string, unknown> | null>(null);
   const [writerProgress, setWriterProgress] = useState<Record<string, unknown> | null>(null);
   const [conflicts, setConflicts] = useState<Array<Record<string, unknown>>>([]);
@@ -172,6 +196,9 @@ export function StudyWorkspace() {
   const [fieldDetail, setFieldDetail] = useState<Record<string, unknown> | null>(null);
   const [previewField, setPreviewField] = useState<string | null>(null);
   const [decisionOutcome, setDecisionOutcome] = useState<Record<string, unknown> | null>(null);
+  const [reviewFormOpen, setReviewFormOpen] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState<{ rationale: string }>({ rationale: "writer review" });
+  const [dataSearch, setDataSearch] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const packageRef = useRef<HTMLInputElement>(null);
 
@@ -182,65 +209,142 @@ export function StudyWorkspace() {
     setAdvancedPane("menu");
   }
 
-  async function refreshAll(sid = activeStudy) {
-    if (!sid) return;
-    const [ws, conf, ready, pf, aud, docs] = await Promise.all([
-      getStudyWorkspace(sid),
-      getStudyConflicts(sid),
-      getStudyReadiness(sid),
-      getStudyPreflight(sid),
-      getStudyAudit(sid),
-      listWorkspaceDocuments(sid).catch(() => ({ documents: [] as Array<Record<string, unknown>> })),
-    ]);
-    setWorkspace({ ...ws, readiness_detail: ready });
-    setConflicts((conf.conflicts as Array<Record<string, unknown>>) || []);
-    setPreflight(pf);
-    setAudit((aud.timeline as Array<Record<string, unknown>>) || []);
-    setDocuments(docs.documents || []);
-    setStudyId(sid);
-    setIsDemo(isDemoStudy(sid) && isDemo);
+  function withOp(key: OpKey, run: () => Promise<void>) {
+    setOps((prev) => setOpBusy(prev, key, true));
+    return run()
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setOps((prev) => setOpError(prev, key, msg));
+        // Unhandled transport/parser failures also surface globally once
+        if (/ContractError|Failed to fetch|NetworkError|Unexpected token|JSON/i.test(msg)) {
+          setGlobalError(msg);
+        }
+      })
+      .finally(() => {
+        setOps((prev) => ({ ...prev, [key]: { ...prev[key], busy: false } }));
+      });
+  }
 
-    try {
-      setWriterProgress(await getWriterProgress(sid));
-    } catch {
-      setWriterProgress(null);
+  const refreshSlices = useCallback(
+    async (slices: RefreshSlice[], sid = activeStudy) => {
+      if (!sid) return;
+      const want = new Set(slices);
+
+      if (want.has("core")) {
+        const [ws, conf, ready, pf] = await Promise.all([
+          getStudyWorkspace(sid),
+          getStudyConflicts(sid),
+          getStudyReadiness(sid),
+          getStudyPreflight(sid),
+        ]);
+        setWorkspace({ ...ws, readiness_detail: ready } as Record<string, unknown>);
+        setConflicts((conf.conflicts as Array<Record<string, unknown>>) || []);
+        setPreflight(pf as Record<string, unknown>);
+        setStudyId(sid);
+        setIsDemo(isDemoStudy(sid) && isDemo);
+      }
+
+      if (want.has("documents")) {
+        try {
+          const docs = await listWorkspaceDocuments(sid);
+          setDocuments(docs.documents || []);
+        } catch {
+          setDocuments([]);
+        }
+      }
+
+      if (want.has("decisions")) {
+        try {
+          const d = await listStudyDecisions(sid);
+          setDecisions((d.decisions as Array<Record<string, unknown>>) || []);
+        } catch {
+          setDecisions([]);
+        }
+        if (!want.has("core")) {
+          try {
+            const conf = await getStudyConflicts(sid);
+            setConflicts((conf.conflicts as Array<Record<string, unknown>>) || []);
+          } catch {
+            /* keep */
+          }
+        }
+      }
+
+      if (want.has("engines")) {
+        try {
+          setSamplePanel((await getSampleSizePanel(sid)) as Record<string, unknown>);
+        } catch {
+          setSamplePanel(null);
+        }
+        try {
+          const stats = await getStudyStatistics(sid);
+          setStatsPanel(stats.panel ? ({ ...stats.panel } as Record<string, unknown>) : null);
+        } catch {
+          setStatsPanel(null);
+        }
+      }
+
+      if (want.has("protocol")) {
+        try {
+          const drafts = await listProtocolDrafts(sid);
+          setProtocolDrafts(drafts.drafts || []);
+        } catch {
+          setProtocolDrafts([]);
+        }
+        try {
+          const arts = await listWorkspaceArtifacts(sid);
+          setArtifacts((arts.artifacts || []) as Array<Record<string, unknown>>);
+        } catch {
+          setArtifacts([]);
+        }
+      }
+
+      if (want.has("history")) {
+        try {
+          const aud = await getStudyAudit(sid);
+          setAudit((aud.timeline as Array<Record<string, unknown>>) || []);
+        } catch {
+          setAudit([]);
+        }
+        try {
+          const snaps = await listWorkspaceSnapshots(sid);
+          setSnapshots(snaps.snapshots || []);
+        } catch {
+          setSnapshots([]);
+        }
+      }
+
+      if (want.has("progress")) {
+        try {
+          setWriterProgress((await getWriterProgress(sid)) as Record<string, unknown>);
+        } catch {
+          setWriterProgress(null);
+        }
+      }
+    },
+    [activeStudy, isDemo],
+  );
+
+  function consumeWorkflowResponse(out: Record<string, unknown>) {
+    if (out.workspace && typeof out.workspace === "object") {
+      setWorkspace(out.workspace as Record<string, unknown>);
     }
-    try {
-      const d = await listStudyDecisions(sid);
-      const list =
-        (d.decisions as Array<Record<string, unknown>>) ||
-        (Array.isArray(d) ? (d as Array<Record<string, unknown>>) : []);
-      setDecisions(list);
-    } catch {
-      setDecisions([]);
+    if (out.readiness && typeof out.readiness === "object") {
+      setWorkspace((prev) =>
+        prev
+          ? { ...prev, readiness_detail: out.readiness as Record<string, unknown> }
+          : prev,
+      );
     }
-    try {
-      setSamplePanel(await getSampleSizePanel(sid));
-    } catch {
-      setSamplePanel(null);
+    if (out.preflight && typeof out.preflight === "object") {
+      setPreflight(out.preflight as Record<string, unknown>);
     }
-    try {
-      setStatsPanel(await getStudyStatistics(sid));
-    } catch {
-      setStatsPanel(null);
-    }
-    try {
-      const drafts = await listProtocolDrafts(sid);
-      setProtocolDrafts(drafts.drafts || []);
-    } catch {
-      setProtocolDrafts([]);
-    }
-    try {
-      const snaps = await listWorkspaceSnapshots(sid);
-      setSnapshots(snaps.snapshots || []);
-    } catch {
-      setSnapshots([]);
-    }
-    try {
-      const arts = await listWorkspaceArtifacts(sid);
-      setArtifacts(arts.artifacts || []);
-    } catch {
-      setArtifacts([]);
+    const stepErrs = collectWorkflowStepErrors(out.steps);
+    if (stepErrs.length) {
+      setWorkflowStepErrors(formatWorkflowStepErrors(stepErrs));
+      setOps((prev) => setOpError(prev, "workflow", formatWorkflowStepErrors(stepErrs)));
+    } else {
+      setWorkflowStepErrors(null);
     }
   }
 
@@ -258,6 +362,39 @@ export function StudyWorkspace() {
     return () => window.clearInterval(timer);
   }, [analyzeBusy]);
 
+  async function openStudy(key: string) {
+    setStudyId(key);
+    setShowNewStudy(false);
+    setGlobalError(null);
+    try {
+      await refreshSlices(ALL_SLICES, key);
+      goTab("overview");
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : "Не удалось открыть исследование");
+    }
+  }
+
+  function backToCatalog() {
+    setStudyId("");
+    setWorkspace(null);
+    setWriterProgress(null);
+    setConflicts([]);
+    setPreflight(null);
+    setAudit([]);
+    setDocuments([]);
+    setDecisions([]);
+    setSamplePanel(null);
+    setStatsPanel(null);
+    setProtocolPreview(null);
+    setProtocolDrafts([]);
+    setSnapshots([]);
+    setArtifacts([]);
+    setDocxResult(null);
+    setShowNewStudy(false);
+    setWizardStep(1);
+    setIsDemo(false);
+  }
+
   async function openFieldDrawer(field: string) {
     if (!activeStudy) return;
     setFieldDrawer(field);
@@ -265,18 +402,16 @@ export function StudyWorkspace() {
     try {
       setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить детали поля");
+      setGlobalError(err instanceof Error ? err.message : "Не удалось загрузить детали поля");
     }
   }
 
   async function runDemoWorkflow() {
-    setBusy(true);
-    setError(null);
-    try {
-      const out = await runStudyWorkflow(DEMO_STUDY_ID, {
+    await withOp("workflow", async () => {
+      const out = (await runStudyWorkflow(DEMO_STUDY_ID, {
         use_golden_fixture: true,
         created_by: "ui-medical-writer",
-      });
+      })) as Record<string, unknown>;
       try {
         await recomputeDecisionCenterGolden();
       } catch {
@@ -299,67 +434,51 @@ export function StudyWorkspace() {
       }
       setIsDemo(true);
       setStudyId(DEMO_STUDY_ID);
+      consumeWorkflowResponse(out);
       if (out.study_mutated === true) {
-        setError("Demo workflow: study mutated (unexpected)");
+        setOps((prev) => setOpError(prev, "workflow", "Demo workflow: study mutated (unexpected)"));
       } else {
         setNotice("Demo workflow завершён. Конфликты требуют экспертного решения.");
       }
-      await refreshAll(DEMO_STUDY_ID);
+      await refreshSlices(["core", "documents", "decisions", "engines", "protocol", "history", "progress"], DEMO_STUDY_ID);
       goTab("overview");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Demo workflow failed");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function analyzePackage() {
     if (!activeStudy) {
-      setError("Сначала создайте исследование или загрузите документы");
+      setOps((prev) => setOpError(prev, "workflow", "Сначала создайте исследование или загрузите документы"));
       return;
     }
-    setBusy(true);
     setAnalyzeBusy(true);
-    setError(null);
-    try {
-      await runStudyWorkflow(activeStudy, {
+    await withOp("workflow", async () => {
+      const out = (await runStudyWorkflow(activeStudy, {
         use_golden_fixture: isDemo,
         created_by: "ui-medical-writer",
-      });
+      })) as Record<string, unknown>;
+      consumeWorkflowResponse(out);
       setNotice("Анализ пакета завершён.");
-      await refreshAll(activeStudy);
+      await refreshSlices(["core", "documents", "decisions", "engines", "progress", "history"], activeStudy);
       if (wizardStep === 3) setWizardStep(4);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Analyze failed");
-    } finally {
-      setBusy(false);
-      setAnalyzeBusy(false);
-    }
+    }).finally(() => setAnalyzeBusy(false));
   }
 
   async function buildDraft() {
     if (!activeStudy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await runStudyWorkflow(activeStudy, {
+    await withOp("protocol", async () => {
+      const out = (await runStudyWorkflow(activeStudy, {
         use_golden_fixture: isDemo,
         prepare_protocol_draft: true,
         created_by: "ui-medical-writer",
-      });
+      })) as Record<string, unknown>;
+      consumeWorkflowResponse(out);
       setNotice("Черновик протокола подготовлен.");
-      await refreshAll(activeStudy);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Build draft failed");
-    } finally {
-      setBusy(false);
-    }
+      await refreshSlices(["protocol", "progress", "core"], activeStudy);
+    });
   }
 
   async function createStudyAndAdvance() {
-    setBusy(true);
-    setError(null);
-    try {
+    await withOp("workflow", async () => {
       const created = await createWorkspaceStudy({
         title: newMeta.title || undefined,
         sponsor: newMeta.sponsor || undefined,
@@ -369,25 +488,19 @@ export function StudyWorkspace() {
       });
       setStudyId(created.study_key);
       setIsDemo(false);
-      await refreshAll(created.study_key);
+      await refreshSlices(ALL_SLICES, created.study_key);
       setWizardStep(2);
       setNotice("Исследование создано. Загрузите пакет документов.");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Create study failed");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function onUploadFiles(files: FileList | null, asPackage: boolean) {
     if (!files?.length) return;
     if (!activeStudy) {
-      setError("Сначала создайте исследование (+ New Study)");
+      setOps((prev) => setOpError(prev, "upload", "Сначала создайте исследование (+ New Study)"));
       return;
     }
-    setBusy(true);
-    setError(null);
-    try {
+    await withOp("upload", async () => {
       const types = asPackage ? ["CHECKLIST", "SYNOPSIS", "SMPC", "OTHER"] : [uploadType];
       let i = 0;
       for (const file of Array.from(files)) {
@@ -395,75 +508,51 @@ export function StudyWorkspace() {
         await uploadWorkspaceDocument(activeStudy, file, dtype);
         i += 1;
       }
-      await refreshAll(activeStudy);
+      await refreshSlices(["documents", "progress", "core"], activeStudy);
       setNotice(`Загружено файлов: ${files.length}`);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setBusy(false);
+    }).finally(() => {
       if (fileRef.current) fileRef.current.value = "";
       if (packageRef.current) packageRef.current.value = "";
-    }
+    });
   }
 
   async function onClassifyDocument(documentId: string, documentType: string) {
     if (!activeStudy) return;
-    setBusy(true);
-    try {
+    await withOp("classify", async () => {
       await classifyWorkspaceDocument(activeStudy, documentId, documentType);
-      await refreshAll(activeStudy);
+      await refreshSlices(["documents", "progress"], activeStudy);
       setNotice("Классификация обновлена.");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Classification failed");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function runPreflight() {
     if (!activeStudy) return;
-    setBusy(true);
-    try {
+    await withOp("preflight", async () => {
       setPreflight(await getStudyPreflight(activeStudy));
-      await refreshAll(activeStudy);
+      await refreshSlices(["core", "progress"], activeStudy);
       goTab("preflight");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Preflight failed");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function loadPreview() {
     if (!activeStudy) return;
-    setBusy(true);
-    try {
+    await withOp("protocol", async () => {
       const prev = await getWorkspaceProtocolPreview(activeStudy);
-      setProtocolPreview(prev);
+      setProtocolPreview(prev as Record<string, unknown>);
       setPreviewField(null);
       setFieldDetail(null);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Preview failed");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function confirmGenerateDocx() {
     if (!activeStudy) return;
-    setBusy(true);
-    setError(null);
-    try {
+    await withOp("docx", async () => {
       const art = await generateWorkspaceDocx(activeStudy, false);
       setDocxResult(art);
       setShowDocxConfirm(false);
-      await refreshAll(activeStudy);
+      await refreshSlices(["protocol", "history", "progress"], activeStudy);
       setNotice("DOCX сгенерирован.");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "DOCX blocked");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const header = (workspace?.header || {}) as Record<string, unknown>;
@@ -601,7 +690,7 @@ export function StudyWorkspace() {
               </label>
             </div>
             <div className="header-actions">
-              <button type="button" disabled={busy} onClick={createStudyAndAdvance}>
+              <button type="button" disabled={ops.workflow.busy} onClick={createStudyAndAdvance}>
                 Далее →
               </button>
               <button type="button" className="secondary" onClick={() => setShowNewStudy(false)}>
@@ -622,10 +711,10 @@ export function StudyWorkspace() {
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={busy || !activeStudy} onClick={() => fileRef.current?.click()}>
+              <button type="button" disabled={ops.upload.busy || !activeStudy} onClick={() => fileRef.current?.click()}>
                 + Upload document
               </button>
-              <button type="button" disabled={busy || !activeStudy} onClick={() => packageRef.current?.click()}>
+              <button type="button" disabled={ops.upload.busy || !activeStudy} onClick={() => packageRef.current?.click()}>
                 Upload package
               </button>
             </div>
@@ -653,7 +742,7 @@ export function StudyWorkspace() {
         {wizardStep === 3 && (
           <div>
             <p className="muted">Шаг 3 — анализ пакета исследования.</p>
-            <button type="button" disabled={busy || !activeStudy} onClick={analyzePackage}>
+            <button type="button" disabled={ops.workflow.busy || !activeStudy} onClick={analyzePackage}>
               Analyze study package
             </button>
             {analyzeBusy && (
@@ -789,27 +878,37 @@ export function StudyWorkspace() {
               <button
                 type="button"
                 className="linkish"
-                onClick={async () => {
-                  const reason = window.prompt("Причина review (обязательно):", "writer review");
-                  if (!reason || !activeStudy) return;
-                  try {
-                    await reviewCanonicalFact(activeStudy, {
-                      field: fieldDrawer,
-                      old_value: fieldDetail.current_value,
-                      new_value: fieldDetail.current_value,
-                      reason,
-                      action: "REVIEW",
-                    });
-                    setNotice(`Review записан для ${fieldDrawer}`);
-                    await refreshAll();
-                    await openFieldDrawer(fieldDrawer);
-                  } catch (err: unknown) {
-                    setError(err instanceof Error ? err.message : "Review failed");
-                  }
-                }}
+                onClick={() => setReviewFormOpen(true)}
               >
                 Review
               </button>
+              {reviewFormOpen && (
+                <DecisionForm
+                  action="review"
+                  title={`Review: ${fieldDrawer}`}
+                  draft={reviewDraft}
+                  onDraftChange={(v) => setReviewDraft({ rationale: v.rationale })}
+                  busy={ops.decision.busy}
+                  error={ops.decision.error}
+                  onCancel={() => setReviewFormOpen(false)}
+                  onSubmit={async (values) => {
+                    if (!activeStudy || !fieldDrawer || !fieldDetail) return;
+                    await withOp("decision", async () => {
+                      await reviewCanonicalFact(activeStudy, {
+                        field: fieldDrawer,
+                        old_value: fieldDetail.current_value,
+                        new_value: fieldDetail.current_value,
+                        reason: values.rationale,
+                        action: "REVIEW",
+                      });
+                      setNotice(`Review записан для ${fieldDrawer}`);
+                      setReviewFormOpen(false);
+                      await refreshSlices(["core", "history", "progress"]);
+                      await openFieldDrawer(fieldDrawer);
+                    });
+                  }}
+                />
+              )}
               <button
                 type="button"
                 className="linkish"
@@ -836,15 +935,91 @@ export function StudyWorkspace() {
     (protocolPreview?.toc as Array<Record<string, unknown>>) ||
     previewSections.map((s) => ({ code: s.code, title: s.title }));
 
+  // Study catalog — entry point (no local-only registry)
+  if (!activeStudy && !showNewStudy) {
+    return (
+      <div className="workspace">
+        <aside className="workspace-sidebar">
+          <div className="workspace-brand">BE Study Workspace</div>
+          <p className="muted small">Recommendation ≠ approval · AI assistive only</p>
+          <button
+            type="button"
+            className="btn-primary-nav"
+            onClick={() => {
+              setShowNewStudy(true);
+              setWizardStep(1);
+            }}
+          >
+            + New Study
+          </button>
+        </aside>
+        <div className="workspace-main">
+          {globalError && (
+            <div className="error-banner" role="alert">
+              {globalError}{" "}
+              <button type="button" className="linkish" onClick={() => setGlobalError(null)}>
+                ✕
+              </button>
+            </div>
+          )}
+          {notice && (
+            <p className="muted notice-banner">
+              {notice}{" "}
+              <button type="button" className="linkish" onClick={() => setNotice(null)}>
+                ✕
+              </button>
+            </p>
+          )}
+          <StudyList
+            onOpen={(key) => void openStudy(key)}
+            onCreateNew={() => {
+              setShowNewStudy(true);
+              setWizardStep(1);
+            }}
+          />
+          <section className="panel">
+            <h3>Demo</h3>
+            <button type="button" className="secondary" disabled={ops.workflow.busy} onClick={runDemoWorkflow}>
+              Run demo UPDCB workflow
+            </button>
+            {ops.workflow.error && (
+              <div className="op-error" role="alert">
+                {ops.workflow.error}{" "}
+                <button type="button" className="linkish" onClick={() => setOps((p) => clearOpError(p, "workflow"))}>
+                  ✕
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  const filteredFacts = dataSearch.trim()
+    ? facts.filter((f) => {
+        const q = dataSearch.trim().toLowerCase();
+        return (
+          String(f.field || "").toLowerCase().includes(q) ||
+          String(f.canonical_value ?? "").toLowerCase().includes(q) ||
+          String(f.source || "").toLowerCase().includes(q)
+        );
+      })
+    : facts;
+
   return (
     <div className={`workspace ${fieldDrawer ? "with-field-drawer" : ""}`}>
       <aside className="workspace-sidebar">
         <div className="workspace-brand">BE Study Workspace</div>
         <p className="muted small">Recommendation ≠ approval · AI assistive only</p>
+        {activeStudy ? (
+          <button type="button" className="secondary" onClick={backToCatalog}>
+            ← Мои исследования
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn-primary-nav"
-          disabled={busy}
           onClick={() => {
             setShowNewStudy(true);
             setWizardStep(1);
@@ -901,13 +1076,13 @@ export function StudyWorkspace() {
               {humanLabel(header.overall_readiness || "Not loaded")}
             </span>
             {activeStudy ? (
-              <button type="button" disabled={busy} onClick={analyzePackage}>
+              <button type="button" disabled={ops.workflow.busy} onClick={analyzePackage}>
                 Analyze study package
               </button>
             ) : (
               <button
                 type="button"
-                disabled={busy}
+                disabled={ops.workflow.busy}
                 className="btn-primary-nav"
                 onClick={() => {
                   setShowNewStudy(true);
@@ -918,7 +1093,7 @@ export function StudyWorkspace() {
               </button>
             )}
             {activeStudy ? (
-              <button type="button" disabled={busy} onClick={() => refreshAll()}>
+              <button type="button" disabled={ops.workflow.busy} onClick={() => void refreshSlices(ALL_SLICES)}>
                 Refresh
               </button>
             ) : null}
@@ -928,7 +1103,22 @@ export function StudyWorkspace() {
         {renderProgressRail()}
         {renderWizard()}
 
-        {error && <div className="error-banner">{error}</div>}
+        {globalError && (
+          <div className="error-banner" role="alert">
+            {globalError}{" "}
+            <button type="button" className="linkish" onClick={() => setGlobalError(null)}>
+              ✕
+            </button>
+          </div>
+        )}
+        {workflowStepErrors && (
+          <div className="op-error" role="alert">
+            Workflow step errors: {workflowStepErrors}{" "}
+            <button type="button" className="linkish" onClick={() => setWorkflowStepErrors(null)}>
+              ✕
+            </button>
+          </div>
+        )}
         {notice && (
           <p className="muted notice-banner">
             {notice}{" "}
@@ -1084,13 +1274,13 @@ export function StudyWorkspace() {
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={busy || !activeStudy} onClick={() => fileRef.current?.click()}>
+              <button type="button" disabled={ops.upload.busy || !activeStudy} onClick={() => fileRef.current?.click()}>
                 + Upload document
               </button>
-              <button type="button" disabled={busy || !activeStudy} onClick={() => packageRef.current?.click()}>
+              <button type="button" disabled={ops.upload.busy || !activeStudy} onClick={() => packageRef.current?.click()}>
                 Upload package
               </button>
-              <button type="button" disabled={busy || !activeStudy} onClick={analyzePackage}>
+              <button type="button" disabled={ops.workflow.busy || !activeStudy} onClick={analyzePackage}>
                 Analyze study package
               </button>
               <input
@@ -1176,6 +1366,16 @@ export function StudyWorkspace() {
               Текущее значение исследования — не regulatory requirement. Edit proposal не переписывает verified SoT
               молча.
             </p>
+            {facts.length > 0 && (
+              <label>
+                Поиск по загруженным facts
+                <input
+                  value={dataSearch}
+                  onChange={(e) => setDataSearch(e.target.value)}
+                  placeholder="field / value / source"
+                />
+              </label>
+            )}
             {!facts.length ? (
               <EmptyState
                 title="Нет извлечённых данных"
@@ -1198,7 +1398,7 @@ export function StudyWorkspace() {
                   </tr>
                 </thead>
                 <tbody>
-                  {facts.map((f) => (
+                  {filteredFacts.map((f) => (
                     <tr
                       key={String(f.field)}
                       className={fieldDrawer === String(f.field) ? "row-selected" : ""}
@@ -1271,10 +1471,10 @@ export function StudyWorkspace() {
                         });
                         setEditDraft(null);
                         setNotice(`Edit proposal записан для ${editDraft.field} (без silent mutation)`);
-                        await refreshAll();
+                        await refreshSlices(["core", "history", "progress"]);
                         if (fieldDrawer === editDraft.field) await openFieldDrawer(editDraft.field);
                       } catch (err: unknown) {
-                        setError(err instanceof Error ? err.message : "Edit failed");
+                        setGlobalError(err instanceof Error ? err.message : "Edit failed");
                       }
                     }}
                   >
@@ -1289,13 +1489,8 @@ export function StudyWorkspace() {
           </section>
         )}
 
-        {tab === "decisions" && (
-          <section className="panel">
-            <h2>Решения</h2>
-            <p className="muted">
-              Рекомендация ≠ утверждённое решение. Конфликт дозы (15 vs 30 мг) не разрешается автоматически.
-            </p>
-
+        {tab === "decisions" && activeStudy && (
+          <>
             {decisionOutcome && (
               <div className="decision-outcome-banner">
                 <strong>{String(decisionOutcome.message || "Decision approved")}</strong>
@@ -1312,233 +1507,34 @@ export function StudyWorkspace() {
                 {Array.isArray(decisionOutcome.affected_protocol_sections) ? (
                   <p>Affected sections: {(decisionOutcome.affected_protocol_sections as string[]).join(", ")}</p>
                 ) : null}
-                {decisionOutcome.recalculation_required ? (
-                  <p>Recalculation required: да</p>
-                ) : null}
+                {decisionOutcome.recalculation_required ? <p>Recalculation required: да</p> : null}
                 {Array.isArray(decisionOutcome.affects) && (decisionOutcome.affects as string[]).length > 0 ? (
                   <p>This decision affects: {(decisionOutcome.affects as string[]).join(" / ")}</p>
                 ) : null}
               </div>
             )}
-
-            {!conflicts.length && !decisions.length ? (
-              <EmptyState
-                title="Нет решений"
-                why="Конфликты и рекомендации появятся после анализа пакета."
-                next="Проанализируйте пакет документов."
-                actionLabel="Analyze study package"
-                onAction={analyzePackage}
-              />
-            ) : null}
-
-            {conflicts.map((c) => (
-              <div key={String(c.id || c.field)} className="decision-card">
-                <div className="header-actions">
-                  <span className={`status-pill ${statusClass(String(c.severity))}`}>{humanLabel(c.severity)}</span>
-                  <span className={`status-pill ${statusClass(String(c.status))}`}>{humanLabel(c.status)}</span>
-                </div>
-                <h3>QUESTION: Resolve {String(c.field)}?</h3>
-                <p>
-                  Evidence: {String(c.evidence || c.required_action || "see sources")}
-                </p>
-                <p>
-                  System recommendation:{" "}
-                  {String(c.recommendation || "Expert decision required — no auto-resolve")}
-                </p>
-                <p>Status: {humanLabel(c.status)}</p>
-                <p className="muted small">
-                  A: <strong>{String(c.value_a)}</strong> ({String(c.source_a)}) · B:{" "}
-                  <strong>{String(c.value_b)}</strong> ({String(c.source_b)})
-                </p>
-                <div className="header-actions">
-                  <button
-                    type="button"
-                    disabled={busy || String(c.status).toUpperCase() !== "OPEN"}
-                    onClick={async () => {
-                      const rationale = window.prompt("Rationale for approving recommendation / selected value:", "");
-                      if (!rationale) return;
-                      setBusy(true);
-                      try {
-                        const out = await postExpertDecision(activeStudy, {
-                          question: `Resolve ${String(c.field)}`,
-                          selected_option: String(c.value_a),
-                          rationale,
-                          status: "APPROVED",
-                        });
-                        setDecisionOutcome(out);
-                        await refreshAll();
-                      } catch (err: unknown) {
-                        setError(err instanceof Error ? err.message : "Approve failed");
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={async () => {
-                      const rationale = window.prompt("Reject reason:", "rejected by writer");
-                      if (!rationale) return;
-                      await requestDecisionEvidence(activeStudy, {
-                        question: String(c.field),
-                        reason: `REJECT: ${rationale}`,
-                      });
-                      setNotice(`Reject logged for ${String(c.field)} — conflict remains until expert resolve`);
-                      await refreshAll();
-                    }}
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={async () => {
-                      const opt = window.prompt("Modify — enter selected value:", String(c.value_b || ""));
-                      const rationale = window.prompt("Rationale:", "");
-                      if (!opt || !rationale) return;
-                      setBusy(true);
-                      try {
-                        const out = await postExpertDecision(activeStudy, {
-                          question: `Resolve ${String(c.field)}`,
-                          selected_option: opt,
-                          rationale,
-                          status: "APPROVED",
-                        });
-                        setDecisionOutcome(out);
-                        await refreshAll();
-                      } catch (err: unknown) {
-                        setError(err instanceof Error ? err.message : "Modify failed");
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    Modify
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const reason = window.prompt("What evidence is needed?", "Need source clarification");
-                      if (!reason) return;
-                      await requestDecisionEvidence(activeStudy, {
-                        question: String(c.field),
-                        reason,
-                      });
-                      setNotice("Evidence requested — no auto-approve");
-                      await refreshAll();
-                    }}
-                  >
-                    Request evidence
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setNotice(`Source A: ${String(c.source_a)} = ${String(c.value_a)}`)}
-                  >
-                    View source A
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setNotice(`Source B: ${String(c.source_b)} = ${String(c.value_b)}`)}
-                  >
-                    View source B
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {decisions.map((d) => {
-              const rec = d.recommendation as Record<string, unknown> | undefined;
-              return (
-                <div key={String(d.id || d.decision_id)} className="decision-card">
-                  <h3>QUESTION: {String(d.question || d.domain || d.id)}</h3>
-                  <p className="muted">Evidence: см. decision center / sources</p>
-                  <p>
-                    System recommendation:{" "}
-                    {String(rec?.option || rec?.summary || d.recommendation || "—")}
-                  </p>
-                  <p>Status: {humanLabel(d.status)}</p>
-                  <div className="header-actions">
-                    <button
-                      type="button"
-                      disabled={String(d.status).toUpperCase() === "APPROVED"}
-                      onClick={async () => {
-                        const rationale = window.prompt("Rationale:", "approve recommendation");
-                        if (!rationale) return;
-                        const out = await approveStudyDecision(activeStudy, String(d.id || d.decision_id), {
-                          reviewer: "writer",
-                          rationale,
-                        });
-                        setDecisionOutcome({
-                          message: "Decision approved",
-                          recalculation_required: true,
-                          affects: ["Protocol"],
-                          ...out,
-                        });
-                        await refreshAll();
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const rationale = window.prompt("Reject rationale:", "");
-                        if (!rationale) return;
-                        await rejectStudyDecision(activeStudy, String(d.id || d.decision_id), {
-                          reviewer: "writer",
-                          rationale,
-                        });
-                        await refreshAll();
-                      }}
-                    >
-                      Reject
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const opt = window.prompt("Modified option:", "");
-                        const rationale = window.prompt("Rationale:", "");
-                        if (!opt || !rationale) return;
-                        const out = await modifyStudyDecision(activeStudy, String(d.id || d.decision_id), {
-                          reviewer: "writer",
-                          selected_option: opt,
-                          rationale,
-                        });
-                        setDecisionOutcome({
-                          message: "Decision modified",
-                          recalculation_required: true,
-                          affects: ["Protocol"],
-                          ...out,
-                        });
-                        await refreshAll();
-                      }}
-                    >
-                      Modify
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const reason = window.prompt("Evidence needed:", "");
-                        if (!reason) return;
-                        await requestDecisionEvidence(activeStudy, {
-                          decision_id: String(d.id || d.decision_id),
-                          reason,
-                        });
-                        await refreshAll();
-                      }}
-                    >
-                      Request evidence
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </section>
+            <DecisionPanel
+              studyId={activeStudy}
+              conflicts={conflicts}
+              decisions={decisions}
+              busy={ops.decision.busy}
+              error={ops.decision.error}
+              canApprove={canApproveDecisions}
+              reviewer={reviewer}
+              onAnalyze={analyzePackage}
+              onDismissError={() => setOps((prev) => clearOpError(prev, "decision"))}
+              onOutcome={setDecisionOutcome}
+              onNotice={setNotice}
+              onRefresh={async (slices) => {
+                await refreshSlices(slices);
+              }}
+              onTransportError={(msg) => {
+                setOps((prev) => setOpError(prev, "decision", msg));
+                setGlobalError(msg);
+              }}
+              runAction={(fn) => withOp("decision", fn)}
+            />
+          </>
         )}
 
         {tab === "evidence" && (
@@ -1547,16 +1543,11 @@ export function StudyWorkspace() {
             <p className="muted">Claims remain PROPOSED until expert verification.</p>
             <button
               type="button"
-              disabled={busy || !activeStudy}
-              onClick={async () => {
-                setBusy(true);
-                try {
+              disabled={ops.decision.busy || !activeStudy}
+              onClick={() => {
+                void withOp("decision", async () => {
                   setReview(await getWriterReview(activeStudy));
-                } catch (err: unknown) {
-                  setError(err instanceof Error ? err.message : "Evidence load failed");
-                } finally {
-                  setBusy(false);
-                }
+                });
               }}
             >
               Load evidence bundle
@@ -1609,6 +1600,18 @@ export function StudyWorkspace() {
                   Status: {humanLabel(samplePanel.status)}{" "}
                   {ssApproved ? "(approved)" : "(not approved — recommendation only)"}
                 </p>
+                {ops.sampleSize.error && (
+                  <div className="op-error" role="alert">
+                    {ops.sampleSize.error}{" "}
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setOps((p) => clearOpError(p, "sampleSize"))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 <pre className="small">{JSON.stringify(samplePanel.scenarios || samplePanel.inputs || [], null, 2).slice(0, 2000)}</pre>
                 {!ssApproved && (
                   <div className="header-actions">
@@ -1617,24 +1620,19 @@ export function StudyWorkspace() {
                     </button>
                     <button
                       type="button"
-                      disabled={busy || !samplePanel.latest_calculation_id}
-                      onClick={async () => {
+                      disabled={ops.sampleSize.busy || !samplePanel.latest_calculation_id || !canApproveDecisions}
+                      onClick={() => {
                         const id = String(samplePanel.latest_calculation_id);
-                        setBusy(true);
-                        try {
+                        void withOp("sampleSize", async () => {
                           await approveSampleSizeCalculation(id, {
-                            reviewer: "writer",
+                            reviewer,
                             decision: `Approve N=${String(samplePanel.calculated_n)}`,
                             comment: "Approved from workspace",
                             project_to_study: false,
                           });
                           setNotice("Sample size approved.");
-                          await refreshAll();
-                        } catch (err: unknown) {
-                          setError(err instanceof Error ? err.message : "Approve sample size failed");
-                        } finally {
-                          setBusy(false);
-                        }
+                          await refreshSlices(["engines", "progress", "core", "history"]);
+                        });
                       }}
                     >
                       Approve
@@ -1683,27 +1681,34 @@ export function StudyWorkspace() {
                     <p className="muted">Scenarios (не выбираются автоматически):</p>
                     <pre className="small">{JSON.stringify(statsPanel.scenarios || [], null, 2).slice(0, 2500)}</pre>
                     <p>{String(statsPanel.recommendation_summary || "")}</p>
+                    {ops.statistics.error && (
+                      <div className="op-error" role="alert">
+                        {ops.statistics.error}{" "}
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={() => setOps((p) => clearOpError(p, "statistics"))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
                     <div className="header-actions">
                       <button type="button" className="secondary" onClick={() => goTab("decisions")}>
                         Review
                       </button>
                       <button
                         type="button"
-                        disabled={busy || !statsPanel.plan_id || Boolean(statsPanel.is_approved)}
-                        onClick={async () => {
-                          setBusy(true);
-                          try {
+                        disabled={ops.statistics.busy || !canApproveDecisions || !statsPanel.plan_id || Boolean(statsPanel.is_approved) || (Array.isArray(statsPanel.blocking_reasons) && (statsPanel.blocking_reasons as unknown[]).length > 0)}
+                        onClick={() => {
+                          void withOp("statistics", async () => {
                             await approveStatisticsPlan(String(statsPanel.plan_id), {
-                              reviewer: "writer",
+                              reviewer,
                               comment: "Approved from workspace",
                             });
                             setNotice("Statistics plan approved.");
-                            await refreshAll();
-                          } catch (err: unknown) {
-                            setError(err instanceof Error ? err.message : "Approve statistics failed");
-                          } finally {
-                            setBusy(false);
-                          }
+                            await refreshSlices(["engines", "progress", "core", "history"]);
+                          });
                         }}
                       >
                         Approve
@@ -1753,18 +1758,18 @@ export function StudyWorkspace() {
               </div>
             </div>
             <div className="header-actions">
-              <button type="button" disabled={busy || !activeStudy} onClick={buildDraft}>
+              <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={buildDraft}>
                 Build draft
               </button>
-              <button type="button" disabled={busy || !activeStudy} onClick={loadPreview}>
+              <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={loadPreview}>
                 Preview
               </button>
-              <button type="button" disabled={busy || !activeStudy} onClick={runPreflight}>
+              <button type="button" disabled={ops.preflight.busy || !activeStudy} onClick={runPreflight}>
                 Run preflight
               </button>
               <button
                 type="button"
-                disabled={busy || !activeStudy || !canGenerateDocx || hasCriticalBlockers}
+                disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || hasCriticalBlockers}
                 onClick={() => setShowDocxConfirm(true)}
               >
                 Generate DOCX
@@ -1785,7 +1790,7 @@ export function StudyWorkspace() {
                   </li>
                 </ul>
                 <div className="header-actions">
-                  <button type="button" disabled={busy} onClick={confirmGenerateDocx}>
+                  <button type="button" disabled={ops.docx.busy} onClick={confirmGenerateDocx}>
                     Confirm generate
                   </button>
                   <button type="button" className="secondary" onClick={() => setShowDocxConfirm(false)}>
@@ -1837,7 +1842,7 @@ export function StudyWorkspace() {
                           try {
                             setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
                           } catch (err: unknown) {
-                            setError(err instanceof Error ? err.message : "Field detail failed");
+                            setGlobalError(err instanceof Error ? err.message : "Field detail failed");
                           }
                         }}
                       >
@@ -2001,21 +2006,16 @@ export function StudyWorkspace() {
               <button
                 type="button"
                 onClick={async () => {
-                  setBusy(true);
-                  try {
+                  void withOp("workflow", async () => {
                     const r = await getBetaCases();
                     setBetaCases((r.cases as Array<Record<string, unknown>>) || []);
                     setAdvancedPane("beta");
-                  } catch (err: unknown) {
-                    setError(err instanceof Error ? err.message : "Beta cases failed");
-                  } finally {
-                    setBusy(false);
-                  }
+                  });
                 }}
               >
                 Load beta cases
               </button>
-              <button type="button" className="secondary" disabled={busy} onClick={runDemoWorkflow}>
+              <button type="button" className="secondary" disabled={ops.workflow.busy} onClick={runDemoWorkflow}>
                 Run demo UPDCB workflow
               </button>
             </div>

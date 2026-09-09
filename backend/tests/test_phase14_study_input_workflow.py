@@ -673,7 +673,7 @@ def test_p02_real_extraction_ai_off(real_pkg: StudyInputPackage) -> None:
 
 
 def test_p03_version_0150() -> None:
-    assert get_settings().app_version == "0.32.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 # ---------------------------------------------------------------------------

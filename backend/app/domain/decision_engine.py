@@ -48,21 +48,27 @@ def recompute_decisions(
 
     If domains is provided, only those domains are recomputed (dependency-aware).
     """
-    prev_by_domain = {p.domain: p for p in (previous or []) if p.status not in {"APPROVED"}}
+    terminal = {"APPROVED", "REJECTED", "KEEP_CURRENT"}
+    prev_by_domain = {p.domain: p for p in (previous or []) if p.status not in terminal}
+    terminal_by_domain = {p.domain: p for p in (previous or []) if p.status in terminal}
     target_domains = list(domains) if domains is not None else list(EVALUATORS.keys())
     out: list[ProtocolDecision] = []
-    # Preserve non-recomputed decisions from previous
-    if domains is not None and previous:
+    # Preserve non-recomputed / terminal decisions from previous
+    if previous:
         for p in previous:
-            if p.domain not in target_domains and p.status != "SUPERSEDED":
+            if p.status in terminal:
+                out.append(p)
+            elif domains is not None and p.domain not in target_domains and p.status != "SUPERSEDED":
                 out.append(p)
     for domain in target_domains:
+        if domain in terminal_by_domain:
+            continue
         fn = EVALUATORS.get(domain)
         if not fn:
             continue
         decision = fn(ctx)
         old = prev_by_domain.get(domain)
-        if old and old.status not in {"APPROVED", "REJECTED"}:
+        if old and old.status not in terminal:
             if old.recommendation:
                 old.recommendation.superseded = True
                 decision.recommendation_history = list(old.recommendation_history) + [old.recommendation]

@@ -23,6 +23,15 @@ def put_calculation(rec: SampleSizeCalculationRecord) -> SampleSizeCalculationRe
     return rec
 
 
+def restore_calculations(records: list[SampleSizeCalculationRecord]) -> None:
+    """Hydrate from DB — allows rewrite of empty memory for a study."""
+    for rec in records:
+        _BY_ID[rec.id] = rec
+        ids = _BY_STUDY.setdefault(rec.study_id, [])
+        if rec.id not in ids:
+            ids.append(rec.id)
+
+
 def get_calculation(calc_id: str) -> SampleSizeCalculationRecord | None:
     return _BY_ID.get(calc_id)
 

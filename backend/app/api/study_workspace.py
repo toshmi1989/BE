@@ -44,6 +44,17 @@ from app.domain.workspace_rbac import ROLES, require
 from app.domain.workspace_snapshots import create_snapshot, list_snapshots
 from app.domain.workspace_workflow import find_by_idempotency, get_workflow_run, save_workflow_run
 from app.models.workspace_persistence import WorkspaceDecisionRecord
+from app.schemas.writer_phase28 import (
+    CanonicalFactDetailResponse,
+    PreflightResponse,
+    ProtocolArtifactItem,
+    ProtocolArtifactsListResponse,
+    ProtocolPreviewResponse,
+    StudyCatalogListResponse,
+    WorkflowRunResponse,
+    WorkspaceSummaryResponse,
+    WriterProgressResponse,
+)
 
 router = APIRouter(tags=["study-workspace"])
 
@@ -93,7 +104,7 @@ def _auth_for_study(
     return assert_study_access(db, auth, study_id, permission=permission)
 
 
-@router.get("/studies/{study_id}/workspace")
+@router.get("/studies/{study_id}/workspace", response_model=WorkspaceSummaryResponse)
 def get_workspace(
     study_id: str,
     package_id: str | None = None,
@@ -136,7 +147,7 @@ def get_conflicts(
     }
 
 
-@router.get("/studies/{study_id}/preflight")
+@router.get("/studies/{study_id}/preflight", response_model=PreflightResponse)
 def get_preflight(
     study_id: str,
     package_id: str | None = None,
@@ -182,7 +193,7 @@ def get_draft_diff(
     return protocol_draft_diff(study_id, from_version, to_version)
 
 
-@router.get("/studies/{study_id}/protocol/preview")
+@router.get("/studies/{study_id}/protocol/preview", response_model=ProtocolPreviewResponse)
 def protocol_preview(
     study_id: str,
     authorization: str | None = Header(default=None),
@@ -217,7 +228,7 @@ def protocol_generate_docx(
     return art
 
 
-@router.get("/studies/{study_id}/protocol/artifacts")
+@router.get("/studies/{study_id}/protocol/artifacts", response_model=ProtocolArtifactsListResponse)
 def protocol_artifacts(
     study_id: str,
     authorization: str | None = Header(default=None),
@@ -227,7 +238,7 @@ def protocol_artifacts(
     return {"study_id": study_id, "artifacts": list_artifacts(db, study_id)}
 
 
-@router.get("/studies/{study_id}/protocol/artifacts/{artifact_id}")
+@router.get("/studies/{study_id}/protocol/artifacts/{artifact_id}", response_model=ProtocolArtifactItem)
 def protocol_artifact_meta(
     study_id: str,
     artifact_id: str,
@@ -468,7 +479,7 @@ def classify_document(
     return out
 
 
-@router.get("/studies/{study_id}/writer-progress")
+@router.get("/studies/{study_id}/writer-progress", response_model=WriterProgressResponse)
 def writer_progress(
     study_id: str,
     package_id: str | None = None,
@@ -480,7 +491,10 @@ def writer_progress(
     return compute_writer_progress(db, study_id, package_id=package_id)
 
 
-@router.get("/studies/{study_id}/canonical-facts/{field_path:path}/detail")
+@router.get(
+    "/studies/{study_id}/canonical-facts/{field_path:path}/detail",
+    response_model=CanonicalFactDetailResponse,
+)
 def canonical_fact_detail(
     study_id: str,
     field_path: str,
@@ -493,7 +507,7 @@ def canonical_fact_detail(
     return build_field_detail(study_id, field_path, package_id=package_id)
 
 
-@router.post("/studies/{study_id}/workflow/run")
+@router.post("/studies/{study_id}/workflow/run", response_model=WorkflowRunResponse)
 def run_workflow(
     study_id: str,
     payload: WorkflowIn | None = None,
@@ -558,13 +572,24 @@ def run_workflow(
         )
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
 
-    create_snapshot(
+    snap = create_snapshot(
         db,
         study_id,
         created_by=auth.email if auth else payload.created_by,
         organization_id=auth.organization_id if auth else None,
         reason="workflow_complete",
         idempotency_key=f"wf-snap-{idem}" if idem else f"wf-snap-{out['workflow_id']}",
+    )
+    from app.domain.study_workspace import patch_protocol_draft_based_on
+
+    draft_info = (out.get("protocol_draft") or {}) if isinstance(out, dict) else {}
+    patch_protocol_draft_based_on(
+        study_id,
+        protocol_id=draft_info.get("protocol_id"),
+        snapshot_id=snap.get("snapshot_id"),
+        decisions=draft_info.get("based_on_decisions"),
+        statistics=draft_info.get("based_on_statistics"),
+        sample_size=draft_info.get("based_on_sample_size"),
     )
     if payload.persist:
         after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
@@ -673,46 +698,107 @@ class DecisionEvidenceRequestIn(BaseModel):
     actor: str = "writer"
 
 
+@router.get("/studies", response_model=StudyCatalogListResponse)
+def list_workspace_studies(
+    q: str | None = None,
+    lifecycle: str | None = None,
+    readiness: str | None = None,
+    offset: int = 0,
+    limit: int = 20,
+    sort: str = "-updated_at",
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Authorized study catalog — primary Writer entry point."""
+    from app.core.config import get_settings
+    from app.domain.auth_service import resolve_auth
+    from app.domain.workspace_study_service import (
+        get_or_create_dev_organization,
+        list_studies_for_org,
+    )
+
+    settings = get_settings()
+    auth = resolve_auth(db, authorization, required=settings.auth_required)
+    if auth:
+        auth.require("view")
+        if auth.organization_id is None:
+            raise HTTPException(status_code=403, detail="No organization context")
+        org_id = auth.organization_id
+    else:
+        org_id = get_or_create_dev_organization(db).id
+    return list_studies_for_org(
+        db,
+        organization_id=org_id,
+        q=q,
+        lifecycle=lifecycle,
+        readiness=readiness,
+        offset=offset,
+        limit=limit,
+        sort=sort,
+    )
+
+
 @router.post("/studies/create")
 def create_workspace_study(
     payload: CreateStudyIn,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Create a real (non-demo) study for writer workflow — no Legacy console."""
-    from uuid import uuid4
+    """Create a persistent WorkspaceStudy for writer workflow — no Legacy console."""
+    from app.core.config import get_settings
+    from app.domain.auth_service import resolve_auth
+    from app.domain.workspace_study_service import (
+        create_canonical_study,
+        get_or_create_dev_organization,
+        study_to_catalog_dict,
+    )
 
     if payload.is_demo:
         raise HTTPException(status_code=400, detail="Use demo workflow for demo studies")
-    key = (payload.study_key or f"STUDY-{uuid4().hex[:10]}").strip()
-    if key.upper().startswith("UPDCB") and "DEMO" not in key.upper():
-        # Keep golden fixture key reserved for demo path
-        if key == "UPDCB-02-BE-2026":
-            raise HTTPException(status_code=400, detail="Reserved demo study key — use Run demo UPDCB workflow")
-    auth = None
-    from app.domain.auth_service import resolve_auth
+    settings = get_settings()
+    auth = resolve_auth(db, authorization, required=settings.auth_required)
+    if auth:
+        auth.require("create_study")
+        if auth.organization_id is None:
+            raise HTTPException(status_code=403, detail="No organization context")
+        org_id = auth.organization_id
+        user_id = auth.user_id
+        who = auth.email
+    else:
+        org_id = get_or_create_dev_organization(db).id
+        user_id = None
+        who = "writer"
 
-    auth = resolve_auth(db, authorization, required=None)
+    row = create_canonical_study(
+        db,
+        organization_id=org_id,
+        created_by_user_id=user_id,
+        study_key=payload.study_key,
+        title=payload.title,
+        sponsor=payload.sponsor,
+        product=payload.product,
+        dose=payload.dose,
+        is_demo=False,
+    )
     append_audit(
-        key,
+        row.study_key,
         event="STUDY_CREATED",
-        who=auth.email if auth else "writer",
-        what=key,
+        who=who,
+        what=row.study_key,
         new_value={
-            "title": payload.title,
-            "sponsor": payload.sponsor,
-            "product": payload.product,
-            "dose": payload.dose,
+            "title": row.title,
+            "sponsor": row.sponsor,
+            "product": row.product,
+            "dose": row.dose,
             "is_demo": False,
+            "organization_id": str(org_id),
         },
         reason="new_study_ux",
     )
+    after_mutation(db, row.study_key, organization_id=org_id)
+    catalog = study_to_catalog_dict(row)
     return {
-        "study_key": key,
-        "title": payload.title,
-        "sponsor": payload.sponsor,
-        "product": payload.product,
-        "dose": payload.dose,
+        **catalog,
         "is_demo": False,
         "next": "upload_documents",
         "legacy_required": False,

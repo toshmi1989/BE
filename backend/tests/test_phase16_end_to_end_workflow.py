@@ -63,9 +63,9 @@ def client():
 
 
 def test_version_021():
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_workflow_golden_e2e():
@@ -215,7 +215,7 @@ def test_api_readiness_and_audit(client: TestClient):
 def test_health_ready(client: TestClient):
     h = client.get("/api/health")
     assert h.status_code == 200
-    assert h.json()["version"] == "0.32.0"
+    assert h.json()["version"] == "0.33.0"
     assert client.get("/api/ready").status_code == 200
 
 

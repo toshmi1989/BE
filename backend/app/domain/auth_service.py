@@ -131,28 +131,21 @@ def create_study_for_org(
     sponsor: str | None = None,
     product: str | None = None,
     dose: str | None = None,
+    is_demo: bool = False,
 ) -> WorkspaceStudy:
-    existing = db.execute(
-        select(WorkspaceStudy).where(
-            WorkspaceStudy.organization_id == organization_id,
-            WorkspaceStudy.study_key == study_key,
-        )
-    ).scalar_one_or_none()
-    if existing:
-        return existing
-    row = WorkspaceStudy(
+    from app.domain.workspace_study_service import create_canonical_study
+
+    return create_canonical_study(
+        db,
         organization_id=organization_id,
         study_key=study_key,
+        created_by_user_id=created_by_user_id,
         title=title,
         sponsor=sponsor,
         product=product,
         dose=dose,
-        created_by_user_id=created_by_user_id,
+        is_demo=is_demo,
     )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
 
 
 def get_study_for_org(db: Session, organization_id: UUID, study_key: str) -> WorkspaceStudy | None:
@@ -238,6 +231,7 @@ def assert_study_access(
             study_key=study_key,
             created_by_user_id=auth.user_id,
             title="UPDCB Golden",
+            is_demo=True,
         )
         return auth
     if study is None:

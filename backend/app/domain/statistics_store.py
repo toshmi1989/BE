@@ -23,6 +23,15 @@ def put_plan(plan: StatisticsPlan) -> StatisticsPlan:
     return plan
 
 
+def restore_plans(plans: list[StatisticsPlan]) -> None:
+    """Hydrate from DB — allows rewrite of empty memory for a study."""
+    for plan in plans:
+        _BY_ID[plan.id] = plan
+        ids = _BY_STUDY.setdefault(plan.study_id, [])
+        if plan.id not in ids:
+            ids.append(plan.id)
+
+
 def get_plan(plan_id: str) -> StatisticsPlan | None:
     return _BY_ID.get(plan_id)
 

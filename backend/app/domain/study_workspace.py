@@ -138,6 +138,35 @@ def list_protocol_drafts(study_id: str) -> list[dict[str, Any]]:
     return list(_PROTOCOL_DRAFTS.get(study_id, []))
 
 
+def patch_protocol_draft_based_on(
+    study_id: str,
+    *,
+    protocol_id: str | None = None,
+    snapshot_id: str | None = None,
+    decisions: list[str] | None = None,
+    statistics: str | None = None,
+    sample_size: str | None = None,
+) -> dict[str, Any] | None:
+    """Update based_on pointers on the latest (or specified) draft after snapshot creation."""
+    drafts = _PROTOCOL_DRAFTS.get(study_id) or []
+    if not drafts:
+        return None
+    target = None
+    if protocol_id:
+        target = next((d for d in drafts if d.get("protocol_id") == protocol_id), None)
+    if target is None:
+        target = drafts[-1]
+    if snapshot_id is not None:
+        target["based_on_snapshot"] = snapshot_id
+    if decisions is not None:
+        target["based_on_decisions"] = list(decisions)
+    if statistics is not None:
+        target["based_on_statistics"] = statistics
+    if sample_size is not None:
+        target["based_on_sample_size"] = sample_size
+    return target
+
+
 def protocol_draft_diff(study_id: str, v_old: int, v_new: int) -> dict[str, Any]:
     drafts = {d["version"]: d for d in list_protocol_drafts(study_id)}
     a = drafts.get(v_old)
@@ -397,7 +426,114 @@ def compute_readiness(study_id: str, *, package_id: str | None = None) -> dict[s
     }
 
 
-def build_workspace_summary(study_id: str, *, package_id: str | None = None) -> dict[str, Any]:
+def _canonical_facts_from_package(
+    study_id: str,
+    *,
+    package_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build writer canonical fact rows from package/context — no invented provenance."""
+    pkg = _find_package(study_id, package_id)
+    ctx = get_context(study_id)
+    open_conflict_fields = {
+        str(c.get("field") or c.get("field_path"))
+        for c in aggregate_conflicts(study_id, package_id=package_id)
+        if str(c.get("status") or "OPEN") == "OPEN"
+    }
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    candidates = list(pkg.candidates) if pkg else []
+    # Prefer verified / higher-rank sources similar to decision context
+    prefer = {"SYNOPSIS": 3, "DESIGN": 2, "SMPC": 2, "CHECKLIST": 1, "SYNOPSIS_DESIGN": 3}
+    by_field: dict[str, Any] = {}
+    for c in candidates:
+        if c.status == "REJECTED":
+            continue
+        fp = c.field_path
+        if fp in open_conflict_fields:
+            # Surface conflict explicitly once
+            if fp in seen:
+                continue
+            seen.add(fp)
+            rows.append(
+                {
+                    "field": fp,
+                    "value": None,
+                    "canonical_value": None,
+                    "status": "CONFLICT",
+                    "source": c.document_type,
+                    "evidence_id": getattr(c, "id", None),
+                    "affected_sections": [],
+                    "is_regulatory_requirement": False,
+                    "confidence": getattr(c, "confidence", None),
+                    "verification_status": c.status,
+                }
+            )
+            continue
+        cur = by_field.get(fp)
+        rank = prefer.get(c.document_type, 0)
+        if cur is None:
+            by_field[fp] = c
+        elif c.status == "VERIFIED" and cur.status != "VERIFIED":
+            by_field[fp] = c
+        elif cur.status != "VERIFIED" and rank > prefer.get(cur.document_type, 0):
+            by_field[fp] = c
+
+    for fp, c in list(by_field.items())[:80]:
+        if fp in open_conflict_fields:
+            continue
+        status = c.status if c.status in {"VERIFIED", "PROPOSED", "REVIEW_REQUIRED", "EXTRACTED"} else c.status
+        if status == "VERIFIED":
+            display_status = "VERIFIED"
+        elif status in {"PROPOSED", "EXTRACTED"}:
+            display_status = "PROPOSED"
+        else:
+            display_status = status or "PROPOSED"
+        rows.append(
+            {
+                "field": fp,
+                "value": c.value,
+                "canonical_value": c.value,
+                "status": display_status,
+                "source": c.document_type
+                or (ctx.fact_sources.get(fp) if ctx and ctx.fact_sources else None)
+                or "PACKAGE",
+                "evidence_id": getattr(c, "id", None),
+                "affected_sections": [],
+                "is_regulatory_requirement": False,
+                "confidence": getattr(c, "confidence", None),
+                "verification_status": c.status,
+            }
+        )
+
+    # Include context facts missing from candidates (still no invented evidence)
+    if ctx:
+        for k, v in list((ctx.structured_facts or {}).items())[:80]:
+            if k in seen or any(r["field"] == k for r in rows):
+                continue
+            rows.append(
+                {
+                    "field": k,
+                    "value": v,
+                    "canonical_value": v,
+                    "status": (ctx.fact_statuses or {}).get(k) or "CURRENT_STUDY_FACT",
+                    "source": (ctx.fact_sources or {}).get(k) or "PACKAGE",
+                    "evidence_id": None,
+                    "affected_sections": [],
+                    "is_regulatory_requirement": False,
+                    "confidence": None,
+                    "verification_status": (ctx.fact_statuses or {}).get(k),
+                }
+            )
+    return rows[:80]
+
+
+def build_workspace_summary(
+    study_id: str,
+    *,
+    package_id: str | None = None,
+    document_count: int | None = None,
+) -> dict[str, Any]:
     ready = compute_readiness(study_id, package_id=package_id)
     pkg = _find_package(study_id, package_id)
     ctx = get_context(study_id)
@@ -408,6 +544,14 @@ def build_workspace_summary(study_id: str, *, package_id: str | None = None) -> 
         for c in pkg.candidates:
             if c.status != "REJECTED" and c.field_path not in facts:
                 facts[c.field_path] = c.value
+
+    # Authoritative document count for Writer overview comes from WorkspaceDocumentRecord
+    # when provided by the DB-backed reader; package docs are study-input only.
+    doc_count = document_count if document_count is not None else ready["counts"]["documents"]
+    ready = dict(ready)
+    ready_counts = dict(ready.get("counts") or {})
+    ready_counts["documents"] = doc_count
+    ready["counts"] = ready_counts
 
     header = {
         "study_id": study_id,
@@ -440,7 +584,7 @@ def build_workspace_summary(study_id: str, *, package_id: str | None = None) -> 
         "header": header,
         "nav": nav,
         "summary_cards": {
-            "documents": ready["counts"]["documents"],
+            "documents": doc_count,
             "critical_conflicts": ready["counts"]["critical_conflicts"],
             "knowledge_gaps": ready["counts"]["knowledge_gaps"],
             "pending_decisions": ready["counts"]["pending_decisions"],
@@ -451,16 +595,7 @@ def build_workspace_summary(study_id: str, *, package_id: str | None = None) -> 
         "readiness": ready,
         "conflicts": aggregate_conflicts(study_id, package_id=package_id),
         "decisions": decision_center_summary(study_id),
-        "canonical_facts": [
-            {
-                "field": k,
-                "canonical_value": v,
-                "status": "CURRENT_STUDY_FACT",
-                "source": (ctx.fact_sources.get(k) if ctx and ctx.fact_sources else None) or "PACKAGE",
-                "is_regulatory_requirement": False,
-            }
-            for k, v in list(facts.items())[:80]
-        ],
+        "canonical_facts": _canonical_facts_from_package(study_id, package_id=package_id),
         "recommendation_is_not_approval": True,
         "study_mutated": False,
         "exposes_internal_enums": False,
@@ -538,8 +673,23 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         bool(list_protocol_drafts(study_id)),
     )
 
+    # Stale dependency check only when a draft already exists
+    if list_protocol_drafts(study_id):
+        from app.domain.protocol_dependency_stale import detect_stale_protocol_dependencies
+
+        stale = detect_stale_protocol_dependencies(study_id)
+        add(
+            "PROTOCOL",
+            "PROTOCOL_DEPENDENCIES_STALE",
+            "CRITICAL",
+            "Protocol draft dependencies match current approved state",
+            not stale.get("stale"),
+        )
+    else:
+        stale = {"stale": False, "reasons": []}
+
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
-    return {
+    out = {
         "study_id": study_id,
         "categories": sorted({c["category"] for c in checks}),
         "checks": checks,
@@ -554,4 +704,6 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
             if critical_fail
             else ("DOCX generation allowed (warnings may remain)" if ready["warnings"] else "Preflight passed")
         ),
+        "stale_dependencies": stale,
     }
+    return out

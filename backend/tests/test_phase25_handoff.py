@@ -1,4 +1,4 @@
-"""Phase 25 — Handoff portability (0.32.0)."""
+"""Phase 25 — Handoff portability (0.33.0)."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def setup_function() -> None:
 
 
 def test_version_0_30_0() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 def test_env_example_and_handoff_docs_exist() -> None:
@@ -49,7 +49,7 @@ def test_api_version_no_secrets() -> None:
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["version"] == "0.32.0"
+    assert body["version"] == "0.33.0"
     assert body["secrets_included"] is False
     assert "auth_secret" not in body
     assert "password" not in body
@@ -57,4 +57,4 @@ def test_api_version_no_secrets() -> None:
 
 def test_health_still_ok() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.32.0"
+    assert client.get("/api/health").json()["version"] == "0.33.0"

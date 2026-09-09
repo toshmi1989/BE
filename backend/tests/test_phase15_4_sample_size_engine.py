@@ -1245,9 +1245,9 @@ def test_aa29_ui_not_approved():
 
 
 def test_aa30_version_019():
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 # ---------------------------------------------------------------------------

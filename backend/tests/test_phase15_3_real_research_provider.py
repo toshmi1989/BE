@@ -650,8 +650,8 @@ def test_y01_ai_off(client: TestClient):
 
 
 def test_y02_version_0180():
-    assert get_settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert get_settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 # Z. MockResearchProvider still works
@@ -961,7 +961,7 @@ def test_ext27_no_phase16():
 
 def test_ext28_health_version(client: TestClient):
     # health may not expose version; settings do
-    assert get_settings().app_version == "0.32.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_ext29_mock_and_real_coexist():

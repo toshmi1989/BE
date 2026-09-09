@@ -1,4 +1,4 @@
-"""Phase 23 — Controlled beta entry gate (0.32.0). No fabricated evidence."""
+"""Phase 23 — Controlled beta entry gate (0.33.0). No fabricated evidence."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def setup_function() -> None:
 
 
 def test_version_0_28_0() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 def test_entry_gate_not_ready() -> None:
@@ -64,7 +64,7 @@ def test_cannot_start_running_without_entry() -> None:
 
 def test_api_beta_gate_and_cases() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.32.0"
+    assert client.get("/api/health").json()["version"] == "0.33.0"
     g = client.get("/api/field-study/beta-gate")
     assert g.status_code == 200
     assert g.json()["overall"] == "BLOCK"

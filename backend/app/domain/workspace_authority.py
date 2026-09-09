@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.domain.decision_store import clear_decision_store, list_decisions
+from app.domain.research_evidence_store import clear_research_evidence_store
 from app.domain.sample_size_store import reset_sample_size_store
 from app.domain.statistics_store import reset_statistics_store
 from app.domain.study_input_store import clear_store as clear_study_input
@@ -44,6 +45,7 @@ def invalidate_study_cache(study_key: str) -> None:
     reset_statistics_store()
     clear_decision_store()
     clear_study_input()
+    clear_research_evidence_store()
 
 
 def ensure_db_authoritative(db: Session, study_key: str) -> bool:
@@ -59,7 +61,10 @@ def read_workspace_summary(
 ) -> dict[str, Any]:
     """Canonical workspace read — always DB-first."""
     ensure_db_authoritative(db, study_key)
-    return build_workspace_summary(study_key, package_id=package_id)
+    from app.domain.workspace_documents import list_study_documents
+
+    docs = list_study_documents(db, study_key)
+    return build_workspace_summary(study_key, package_id=package_id, document_count=len(docs))
 
 
 def read_readiness(db: Session, study_key: str, *, package_id: str | None = None) -> dict[str, Any]:
@@ -78,6 +83,19 @@ def after_mutation(
     *,
     organization_id: UUID | None = None,
 ) -> None:
-    """Persist mutation to DB then invalidate process cache (DB remains SoT)."""
-    persist_workspace_bundle(db, study_key, organization_id=organization_id)
+    """Persist mutation to DB then invalidate process cache (DB remains SoT).
+
+    When persistence tables are unavailable (memory-only fixtures), keep the
+    in-process working set instead of wiping it.
+    """
+    row = persist_workspace_bundle(db, study_key, organization_id=organization_id)
+    if row is None:
+        return
+    try:
+        from app.domain.workspace_study_service import sync_study_summary
+
+        sync_study_summary(db, study_key, organization_id=organization_id)
+    except Exception:
+        # Catalog sync is best-effort; persistence already succeeded.
+        pass
     invalidate_study_cache(study_key)

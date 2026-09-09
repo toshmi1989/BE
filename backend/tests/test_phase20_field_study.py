@@ -1,4 +1,4 @@
-"""Phase 20 — Field study execution (0.32.0). No fabricated ROI or packages."""
+"""Phase 20 — Field study execution (0.33.0). No fabricated ROI or packages."""
 
 from __future__ import annotations
 
@@ -32,9 +32,9 @@ def setup_function() -> None:
 
 
 def test_version_0_25_0() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 def test_explicit_package_limitation_no_fabrication() -> None:
@@ -117,7 +117,7 @@ def test_ops_evidence_file_exists_after_execution() -> None:
 
 def test_field_study_api_pair_and_readiness() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.32.0"
+    assert client.get("/api/health").json()["version"] == "0.33.0"
     ready = client.get("/api/field-study/production-readiness")
     assert ready.status_code == 200
     assert ready.json()["gate"] == "NOT READY"

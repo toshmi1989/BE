@@ -761,7 +761,7 @@ def test_production_readiness_coverage() -> None:
     assert d["regulatory_evidence_coverage"]["package_status"] == "PARTIAL"
     assert any("PARTIAL" in str(b) or "Regulatory evidence" in str(b) for b in d["production_blockers"])
     assert d["recommendation"] != "PRODUCTION-READY"
-    assert Settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
 
 
 def test_regulatory_coverage_report() -> None:
@@ -1038,11 +1038,11 @@ def test_interview_json_fixture_present() -> None:
 
 
 def test_app_version_0_14_1() -> None:
-    # Phase 14 bumped app to 0.32.0; keep this gate aligned with shipped version.
-    assert Settings().app_version == "0.32.0"
+    # Phase 14 bumped app to 0.33.0; keep this gate aligned with shipped version.
+    assert Settings().app_version == "0.33.0"
     from app.domain.protocol_constants import PROTOCOL_GENERATOR_VERSION
 
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
 
 
 def test_pipeline_verified_claims_count_zero() -> None:

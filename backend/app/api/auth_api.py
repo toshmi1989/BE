@@ -17,6 +17,7 @@ from app.domain.auth_service import (
     register_user,
     require_auth,
 )
+from app.schemas.writer_phase28 import AuthLoginResponse, AuthMeResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -57,7 +58,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> dict[str, An
     )
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthLoginResponse)
 def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict[str, Any]:
     return login_user(
         db,
@@ -67,7 +68,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict[str, Any]:
     )
 
 
-@router.get("/me")
+@router.get("/me", response_model=AuthMeResponse)
 def me(auth: AuthContext = Depends(require_auth)) -> dict[str, Any]:
     return {
         "user_id": str(auth.user_id),
@@ -95,6 +96,8 @@ def create_study(
         sponsor=payload.sponsor,
         product=payload.product,
         dose=payload.dose,
+        # Golden UPDCB keys are reserved demo fixtures — allow explicit auth create/bind
+        is_demo=str(payload.study_key or "").startswith("UPDCB"),
     )
     return {
         "study_id": str(row.id),

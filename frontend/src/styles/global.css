@@ -312,6 +312,41 @@ button.linkish {
   margin-bottom: 1rem;
 }
 
+.op-error {
+  color: var(--error);
+  border: 1px solid #c98989;
+  background: #f8ecec;
+  padding: 0.55rem 0.75rem;
+  margin: 0.5rem 0 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.decision-form textarea {
+  width: 100%;
+  min-height: 4rem;
+  font: inherit;
+}
+
+.decision-form .radio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+
+.decision-detail {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.study-catalog-filters {
+  margin-bottom: 1rem;
+}
+
 .small {
   font-size: 0.8rem;
 }

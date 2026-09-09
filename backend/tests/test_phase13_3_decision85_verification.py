@@ -197,9 +197,9 @@ def test_amendments_not_invented_when_header_absent() -> None:
 
 
 def test_app_version_0_14_3() -> None:
-    assert Settings().app_version == "0.32.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
-    assert get_settings().app_version == "0.32.0"
+    assert Settings().app_version == "0.33.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert get_settings().app_version == "0.33.0"
 
 
 # ---------------------------------------------------------------------------

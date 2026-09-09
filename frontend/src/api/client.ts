@@ -1,3 +1,57 @@
+import {
+  parseArtifactsResponse,
+  parseAuthTokenResponse,
+  parseAuthUser,
+  parseDecisionsResponse,
+  parsePreflightResponse,
+  parseProtocolPreview,
+  parseSampleSizePanel,
+  parseStatisticsResponse,
+  parseStudyListResponse,
+  parseVersionInfo,
+  parseWorkflowResponse,
+  parseWorkspaceSummary,
+  parseWriterProgress,
+  type ArtifactsResponse,
+  type AuthTokenResponse,
+  type AuthUser,
+  type DecisionsResponse,
+  type PreflightResponse,
+  type ProtocolPreview,
+  type SampleSizePanel,
+  type StatisticsResponse,
+  type StudyListItem,
+  type StudyListResponse,
+  type VersionInfo,
+  type WorkflowResponse,
+  type WorkspaceSummary,
+  type WriterProgress,
+} from "./contracts";
+
+export type {
+  ArtifactsResponse,
+  AuthTokenResponse,
+  AuthUser,
+  DecisionsResponse,
+  PreflightResponse,
+  ProtocolPreview,
+  SampleSizePanel,
+  StatisticsResponse,
+  StudyListItem,
+  StudyListResponse,
+  VersionInfo,
+  WorkflowResponse,
+  WorkspaceSummary,
+  WriterProgress,
+};
+
+export {
+  ContractError,
+  getStatisticsPanel,
+  parseStatisticsResponse,
+  type StatisticsPanel,
+} from "./contracts";
+
 export function resolveApiBase(): string {
   const explicit = import.meta.env.VITE_API_BASE_URL;
   if (explicit != null && String(explicit).trim() !== "") {
@@ -9,17 +63,93 @@ export function resolveApiBase(): string {
 
 const API_BASE = resolveApiBase();
 
+const AUTH_TOKEN_KEY = "be_auth_token";
+
+let authTokenMemory: string | null = null;
+
+function readStoredToken(): string | null {
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    const v = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (authTokenMemory) return authTokenMemory;
+  authTokenMemory = readStoredToken();
+  return authTokenMemory;
+}
+
+export function setAuthToken(token: string | null): void {
+  authTokenMemory = token && token.trim() ? token : null;
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    if (authTokenMemory) sessionStorage.setItem(AUTH_TOKEN_KEY, authTokenMemory);
+    else sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    /* ignore storage errors (private mode / SSR) */
+  }
+}
+
+export function clearAuthToken(): void {
+  setAuthToken(null);
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: string;
+  readonly code: string | null;
+
+  constructor(status: number, body: string, code: string | null = null) {
+    super(`HTTP ${status}: ${body}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+    this.code = code;
+  }
+}
+
+function extractErrorCode(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown; code?: unknown };
+    if (typeof parsed.code === "string") return parsed.code;
+    if (typeof parsed.detail === "string") return parsed.detail;
+    if (parsed.detail && typeof parsed.detail === "object" && !Array.isArray(parsed.detail)) {
+      const d = parsed.detail as { code?: unknown; message?: unknown };
+      if (typeof d.code === "string") return d.code;
+      if (typeof d.message === "string") return d.message;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has("Content-Type") && !(init?.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+  const token = getAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    headers,
   });
+
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`HTTP ${response.status}: ${body}`);
+    if (response.status === 401) {
+      clearAuthToken();
+    }
+    // 403: preserve token (forbidden ≠ unauthenticated)
+    throw new ApiError(response.status, body, extractErrorCode(body));
   }
   if (response.status === 204) {
     return undefined as T;
@@ -197,6 +327,75 @@ export type DesignRecommendResult = {
 
 export function fetchHealth(): Promise<HealthPayload> {
   return request<HealthPayload>("/api/health");
+}
+
+/** Phase 28 — auth + version + study catalog */
+export async function getVersion(): Promise<VersionInfo> {
+  const raw = await request<unknown>("/api/version");
+  return parseVersionInfo(raw);
+}
+
+export async function login(body: {
+  email: string;
+  password: string;
+  organization_id?: string;
+}): Promise<AuthTokenResponse> {
+  const raw = await request<unknown>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const parsed = parseAuthTokenResponse(raw);
+  if (!parsed.access_token) {
+    throw new ApiError(500, "Login response missing access_token", "MISSING_TOKEN");
+  }
+  setAuthToken(parsed.access_token);
+  return parsed;
+}
+
+export async function register(body: {
+  email: string;
+  password: string;
+  display_name: string;
+  organization_name: string;
+  organization_slug?: string;
+  role?: string;
+}): Promise<AuthTokenResponse> {
+  const raw = await request<unknown>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const parsed = parseAuthTokenResponse(raw);
+  if (parsed.access_token) setAuthToken(parsed.access_token);
+  return parsed;
+}
+
+export async function getMe(): Promise<AuthUser> {
+  const raw = await request<unknown>("/api/auth/me");
+  return parseAuthUser(raw);
+}
+
+export async function logout(): Promise<void> {
+  clearAuthToken();
+}
+
+export async function listStudies(params?: {
+  q?: string;
+  lifecycle?: string;
+  readiness?: string;
+  offset?: number;
+  limit?: number;
+  sort?: string;
+}): Promise<StudyListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.lifecycle) qs.set("lifecycle", params.lifecycle);
+  if (params?.readiness) qs.set("readiness", params.readiness);
+  if (params?.offset != null) qs.set("offset", String(params.offset));
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.sort) qs.set("sort", params.sort);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(`/api/studies${suffix}`);
+  return parseStudyListResponse(raw);
 }
 
 export function listProjects(): Promise<ProjectSummary[]> {
@@ -440,12 +639,18 @@ export async function uploadDocument(projectId: string, file: File, sourceType =
   const form = new FormData();
   form.append("file", file);
   form.append("source_type", sourceType);
-  const response = await fetch(
-    `${API_BASE}/api/projects/${projectId}/documents`,
-    { method: "POST", body: form },
-  );
+  const headers = new Headers();
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${API_BASE}/api/projects/${projectId}/documents`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    const body = await response.text();
+    if (response.status === 401) clearAuthToken();
+    throw new ApiError(response.status, body, extractErrorCode(body));
   }
   return response.json();
 }
@@ -903,8 +1108,9 @@ export function recomputeDecisionCenterGolden() {
   });
 }
 
-export function listStudyDecisions(studyId: string) {
-  return request<Record<string, unknown>>(`/api/decision-center/studies/${studyId}/decisions`);
+export async function listStudyDecisions(studyId: string): Promise<DecisionsResponse> {
+  const raw = await request<unknown>(`/api/decision-center/studies/${studyId}/decisions`);
+  return parseDecisionsResponse(raw);
 }
 
 export function getDecisionEvidence(studyId: string, decisionId: string) {
@@ -1013,8 +1219,9 @@ export function registerResearchResultSource(
 }
 
 /** Phase 15.4 — Sample Size Engine (calculated ≠ approved; never mutates Study) */
-export function getSampleSizePanel(studyId: string) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/sample-size/panel`);
+export async function getSampleSizePanel(studyId: string): Promise<SampleSizePanel> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/sample-size/panel`);
+  return parseSampleSizePanel(raw);
 }
 
 export function calculateStudySampleSize(studyId: string, body: Record<string, unknown>) {
@@ -1029,8 +1236,9 @@ export function listSampleSizeCalculations(studyId: string) {
 }
 
 /** Phase 15.5 — Statistics Engine (method plan; recommendation ≠ approval) */
-export function getStudyStatistics(studyId: string) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/statistics`);
+export async function getStudyStatistics(studyId: string): Promise<StatisticsResponse> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/statistics`);
+  return parseStatisticsResponse(raw);
 }
 
 export function recomputeStudyStatistics(studyId: string, body: Record<string, unknown> = {}) {
@@ -1048,8 +1256,9 @@ export function recomputeStatisticsGolden() {
 }
 
 /** Phase 16 — Study Workspace / E2E workflow */
-export function getStudyWorkspace(studyId: string) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/workspace`);
+export async function getStudyWorkspace(studyId: string): Promise<WorkspaceSummary> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/workspace`);
+  return parseWorkspaceSummary(raw);
 }
 
 export function getStudyReadiness(studyId: string) {
@@ -1060,19 +1269,24 @@ export function getStudyConflicts(studyId: string) {
   return request<Record<string, unknown>>(`/api/studies/${studyId}/conflicts`);
 }
 
-export function getStudyPreflight(studyId: string) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/preflight`);
+export async function getStudyPreflight(studyId: string): Promise<PreflightResponse> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/preflight`);
+  return parsePreflightResponse(raw);
 }
 
 export function getStudyAudit(studyId: string) {
   return request<Record<string, unknown>>(`/api/studies/${studyId}/audit`);
 }
 
-export function runStudyWorkflow(studyId: string, body: Record<string, unknown> = {}) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/workflow/run`, {
+export async function runStudyWorkflow(
+  studyId: string,
+  body: Record<string, unknown> = {},
+): Promise<WorkflowResponse> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/workflow/run`, {
     method: "POST",
     body: JSON.stringify(body),
   });
+  return parseWorkflowResponse(raw);
 }
 
 export function getBetaCases() {
@@ -1129,12 +1343,18 @@ export async function uploadWorkspaceDocument(
   const form = new FormData();
   form.append("file", file);
   form.append("document_type", documentType);
+  const headers = new Headers();
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(`${API_BASE}/api/studies/${studyId}/documents/upload`, {
     method: "POST",
+    headers,
     body: form,
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    const body = await response.text();
+    if (response.status === 401) clearAuthToken();
+    throw new ApiError(response.status, body, extractErrorCode(body));
   }
   return response.json() as Promise<Record<string, unknown>>;
 }
@@ -1194,19 +1414,9 @@ export function modifyStudyDecision(
   );
 }
 
-export function getWorkspaceProtocolPreview(studyId: string) {
-  return request<{
-    toc?: Array<Record<string, unknown>>;
-    sections?: Array<Record<string, unknown>>;
-    tables?: Array<Record<string, unknown>>;
-    protocol_id?: string;
-    version?: number | string;
-    status?: string;
-    snapshot_id?: string | null;
-    legacy_project_path?: boolean;
-    stale_template_values?: boolean;
-    [key: string]: unknown;
-  }>(`/api/studies/${studyId}/protocol/preview`);
+export async function getWorkspaceProtocolPreview(studyId: string): Promise<ProtocolPreview> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/protocol/preview`);
+  return parseProtocolPreview(raw);
 }
 
 export function generateWorkspaceDocx(studyId: string, confirmWarnings = false) {
@@ -1247,17 +1457,9 @@ export function resolveApiBasePublic(): string {
 }
 
 /** Phase 27 — guided writer workflow */
-export function getWriterProgress(studyId: string) {
-  return request<{
-    steps: Array<{ id: string; label: string; status: string; tab: string }>;
-    primary_next_action: Record<string, unknown>;
-    secondary_issues: Array<Record<string, unknown>>;
-    blockers: Array<Record<string, unknown>>;
-    package_checklist: Array<Record<string, unknown>>;
-    counts: Record<string, unknown>;
-    versions: Record<string, unknown>;
-    preflight: Record<string, unknown>;
-  }>(`/api/studies/${studyId}/writer-progress`);
+export async function getWriterProgress(studyId: string): Promise<WriterProgress> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/writer-progress`);
+  return parseWriterProgress(raw);
 }
 
 export function getCanonicalFactDetail(studyId: string, field: string) {
@@ -1277,10 +1479,9 @@ export function classifyWorkspaceDocument(
   );
 }
 
-export function listWorkspaceArtifacts(studyId: string) {
-  return request<{ artifacts: Array<Record<string, unknown>> }>(
-    `/api/studies/${studyId}/protocol/artifacts`,
-  );
+export async function listWorkspaceArtifacts(studyId: string): Promise<ArtifactsResponse> {
+  const raw = await request<unknown>(`/api/studies/${studyId}/protocol/artifacts`);
+  return parseArtifactsResponse(raw);
 }
 
 export function downloadWorkspaceArtifactUrl(studyId: string, artifactId: string) {

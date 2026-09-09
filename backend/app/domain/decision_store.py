@@ -33,6 +33,11 @@ def put_decisions(study_id: str | None, decisions: list[ProtocolDecision], *, pa
     _BY_STUDY[key] = ids
 
 
+def restore_analogues(study_id: str | None, analogues: list[AnalogueStudyEvidence]) -> None:
+    key = _study_key(study_id)
+    _ANALOGUES[key] = list(analogues)
+
+
 def list_decisions(study_id: str | None, *, package_id: str | None = None) -> list[ProtocolDecision]:
     key = _study_key(study_id, package_id)
     return [_DECISIONS[i] for i in _BY_STUDY.get(key, []) if i in _DECISIONS]

@@ -180,12 +180,13 @@ def run_protocol_workflow(
         if any(b.get("code") == "UNRESOLVED_CRITICAL_CONFLICT" for b in critical):
             draft_status = "BLOCKED_PENDING_DECISIONS"
             step("prepare_protocol_draft", prepared=True, reason="critical_conflict", status=draft_status)
+        # based_on_snapshot must be a SNAP-* id (patched after create_snapshot), never package_id
         draft = put_protocol_draft_version(
             study_id,
             status=draft_status,
             created_by=created_by,
             based_on={
-                "snapshot": pkg.package_id,
+                "snapshot": None,
                 "decisions": [d.id for d in decisions],
                 "evidence": pkg.package_id,
                 "statistics": stats_plan.id,
