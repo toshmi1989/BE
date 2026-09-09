@@ -10,7 +10,7 @@ TEMPLATE_ID = "BE_Protocol_Template"
 TEMPLATE_VERSION = "v2.0"
 TEMPLATE_FILENAME = "BE_Protocol_Template_v2.0.docx"
 TEMPLATE_CHECKSUM_SHA256 = "8e6be6aa6f0514dc4ba6a1016feb141946a2ded538a58d306bcf0fa68725d8a6"
-DOCX_GENERATOR_VERSION = "0.30.0"
+DOCX_GENERATOR_VERSION = "0.32.0"
 PROFILE_VERSION = "DOCX.PROFILE.v4"
 
 # ProtocolDraft table_key → template table index (0-based)

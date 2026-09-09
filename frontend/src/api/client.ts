@@ -1091,3 +1091,205 @@ export function getWriterReview(studyId: string, field?: string) {
   return request<Record<string, unknown>>(`/api/beta/studies/${studyId}/writer-review${q}`);
 }
 
+/** Phase 26 — Writer workspace APIs (no Legacy required) */
+export function createWorkspaceStudy(body: {
+  study_key?: string;
+  title?: string;
+  sponsor?: string;
+  product?: string;
+  dose?: string;
+  is_demo?: boolean;
+}) {
+  return request<{
+    study_key: string;
+    title?: string | null;
+    sponsor?: string | null;
+    product?: string | null;
+    dose?: string | null;
+    is_demo: boolean;
+    next: string;
+    legacy_required: boolean;
+  }>(`/api/studies/create`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function listWorkspaceDocuments(studyId: string) {
+  return request<{ study_id: string; documents: Array<Record<string, unknown>> }>(
+    `/api/studies/${studyId}/documents`,
+  );
+}
+
+export async function uploadWorkspaceDocument(
+  studyId: string,
+  file: File,
+  documentType = "OTHER",
+) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("document_type", documentType);
+  const response = await fetch(`${API_BASE}/api/studies/${studyId}/documents/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export function reviewCanonicalFact(
+  studyId: string,
+  body: {
+    field: string;
+    old_value?: unknown;
+    new_value?: unknown;
+    reason: string;
+    actor?: string;
+    action?: "REVIEW" | "EDIT_PROPOSAL";
+  },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/canonical-facts/review`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function requestDecisionEvidence(
+  studyId: string,
+  body: { decision_id?: string; question?: string; reason: string; actor?: string },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/decisions/request-evidence`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postExpertDecision(
+  studyId: string,
+  body: {
+    question: string;
+    selected_option: string;
+    rationale: string;
+    evidence_refs?: string[];
+    decision_id?: string;
+    status?: string;
+  },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/decisions/expert`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function modifyStudyDecision(
+  studyId: string,
+  decisionId: string,
+  body: { reviewer: string; rationale: string; selected_option: string },
+) {
+  return request<Record<string, unknown>>(
+    `/api/decision-center/studies/${studyId}/decisions/${decisionId}/modify`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function getWorkspaceProtocolPreview(studyId: string) {
+  return request<{
+    toc?: Array<Record<string, unknown>>;
+    sections?: Array<Record<string, unknown>>;
+    tables?: Array<Record<string, unknown>>;
+    protocol_id?: string;
+    version?: number | string;
+    status?: string;
+    snapshot_id?: string | null;
+    legacy_project_path?: boolean;
+    stale_template_values?: boolean;
+    [key: string]: unknown;
+  }>(`/api/studies/${studyId}/protocol/preview`);
+}
+
+export function generateWorkspaceDocx(studyId: string, confirmWarnings = false) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/protocol/generate-docx`, {
+    method: "POST",
+    body: JSON.stringify({ confirm_warnings: confirmWarnings }),
+  });
+}
+
+export function listProtocolDrafts(studyId: string) {
+  return request<{ drafts: Array<Record<string, unknown>> }>(
+    `/api/studies/${studyId}/protocol-drafts`,
+  );
+}
+
+export function approveSampleSizeCalculation(
+  calculationId: string,
+  body: { reviewer: string; decision: string; comment?: string; project_to_study?: boolean },
+) {
+  return request<Record<string, unknown>>(`/api/sample-size/calculations/${calculationId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function approveStatisticsPlan(
+  planId: string,
+  body: { reviewer: string; comment?: string },
+) {
+  return request<Record<string, unknown>>(`/api/statistics/${planId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function resolveApiBasePublic(): string {
+  return API_BASE;
+}
+
+/** Phase 27 — guided writer workflow */
+export function getWriterProgress(studyId: string) {
+  return request<{
+    steps: Array<{ id: string; label: string; status: string; tab: string }>;
+    primary_next_action: Record<string, unknown>;
+    secondary_issues: Array<Record<string, unknown>>;
+    blockers: Array<Record<string, unknown>>;
+    package_checklist: Array<Record<string, unknown>>;
+    counts: Record<string, unknown>;
+    versions: Record<string, unknown>;
+    preflight: Record<string, unknown>;
+  }>(`/api/studies/${studyId}/writer-progress`);
+}
+
+export function getCanonicalFactDetail(studyId: string, field: string) {
+  const enc = encodeURIComponent(field);
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/canonical-facts/${enc}/detail`);
+}
+
+export function classifyWorkspaceDocument(
+  studyId: string,
+  documentId: string,
+  documentType: string,
+  actor = "writer",
+) {
+  return request<Record<string, unknown>>(
+    `/api/studies/${studyId}/documents/${documentId}/classify`,
+    { method: "POST", body: JSON.stringify({ document_type: documentType, actor }) },
+  );
+}
+
+export function listWorkspaceArtifacts(studyId: string) {
+  return request<{ artifacts: Array<Record<string, unknown>> }>(
+    `/api/studies/${studyId}/protocol/artifacts`,
+  );
+}
+
+export function downloadWorkspaceArtifactUrl(studyId: string, artifactId: string) {
+  return `${API_BASE}/api/studies/${studyId}/protocol/artifacts/${artifactId}/download`;
+}
+
+export function listWorkspaceSnapshots(studyId: string) {
+  return request<{ snapshots: Array<Record<string, unknown>> }>(
+    `/api/studies/${studyId}/snapshots`,
+  );
+}
+

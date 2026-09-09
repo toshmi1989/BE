@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/client.ts","./src/pages/dashboard.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/nextaction.ts","./src/vite-env.d.ts","./src/writerlabels.ts","./src/api/client.ts","./src/pages/controlledbetadashboard.tsx","./src/pages/dashboard.tsx","./src/pages/studyworkspace.tsx"],"version":"5.9.3"}

@@ -1,4 +1,4 @@
-"""Phase 22 — Controlled beta preparation (0.30.0). No fabricated evidence."""
+"""Phase 22 — Controlled beta preparation (0.32.0). No fabricated evidence."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ def setup_function() -> None:
 
 
 def test_version_0_27_0() -> None:
-    assert Settings().app_version == "0.30.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.30.0"
+    assert Settings().app_version == "0.32.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
 
 
 def test_status_beta_not_ready_reasons() -> None:
@@ -92,7 +92,7 @@ def test_production_not_ready() -> None:
 
 def test_api_beta_endpoints() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.30.0"
+    assert client.get("/api/health").json()["version"] == "0.32.0"
     st = client.get("/api/field-study/status")
     assert st.status_code == 200
     assert st.json()["beta_label"] == "BETA NOT READY"

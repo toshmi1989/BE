@@ -80,6 +80,16 @@ def persist_workspace_bundle(
     row = db.execute(
         select(WorkspaceStateBag).where(WorkspaceStateBag.study_key == study_key)
     ).scalar_one_or_none()
+    # Never clobber a persisted package with None after process-cache invalidation
+    if bundle["package_payload"] is None and row is not None and row.package_payload:
+        bundle["package_payload"] = row.package_payload
+        bundle["content_hash"] = _json_hash(
+            {
+                "package": bundle["package_payload"],
+                "drafts": bundle["workspace_meta"].get("protocol_drafts"),
+                "audit_ids": [a.get("id") for a in (bundle["workspace_meta"].get("audit") or [])],
+            }
+        )
     if row and row.content_hash == bundle["content_hash"]:
         return row
     if row is None:

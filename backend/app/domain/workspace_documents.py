@@ -119,21 +119,81 @@ def list_study_documents(db: Session, study_key: str) -> list[dict[str, Any]]:
     return [_ser(r) for r in rows]
 
 
+def update_document_classification(
+    db: Session,
+    *,
+    study_key: str,
+    document_id: str,
+    document_type: str,
+    actor: str = "writer",
+) -> dict[str, Any]:
+    """Correct document classification — does not invent types or mutate Study SoT."""
+    allowed = {"CHECKLIST", "SYNOPSIS", "SMPC", "OTHER", "DESIGN", "SYNOPSIS_DESIGN"}
+    dtype = (document_type or "OTHER").strip().upper()
+    if dtype not in allowed:
+        raise ValidationError(f"Unsupported document_type: {dtype}", field="document_type")
+    row = db.execute(
+        select(WorkspaceDocumentRecord).where(
+            WorkspaceDocumentRecord.study_key == study_key,
+            WorkspaceDocumentRecord.document_id == document_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise ValidationError("Document not found", field="document_id")
+    old = row.document_type
+    row.document_type = dtype
+    row.classification_status = "CLASSIFIED"
+    db.commit()
+    db.refresh(row)
+    out = _ser(row)
+    out["previous_type"] = old
+    out["classified_by"] = actor
+    return out
+
+
+def document_ui_status(row: WorkspaceDocumentRecord) -> str:
+    """Writer-facing status — not an internal pipeline enum dump."""
+    statuses = [
+        str(row.ingestion_status or "").upper(),
+        str(row.classification_status or "").upper(),
+        str(row.extraction_status or "").upper(),
+    ]
+    if any("ERROR" in s or "FAIL" in s for s in statuses):
+        return "ERROR"
+    if any("REVIEW" in s for s in statuses):
+        return "REVIEW_REQUIRED"
+    if all(s in {"READY", "COMPLETE", "DONE", "CLASSIFIED", "EXTRACTED"} for s in statuses if s):
+        return "READY"
+    if any(s in {"PENDING", "PROCESSING", "RUNNING", "IN_PROGRESS"} for s in statuses):
+        if statuses[0] == "UPLOADED" and statuses[1] == "PENDING" and statuses[2] == "PENDING":
+            return "UPLOADED"
+        return "PROCESSING"
+    if statuses[0] == "UPLOADED":
+        return "UPLOADED"
+    return statuses[0] or "UPLOADED"
+
+
 def _ser(row: WorkspaceDocumentRecord) -> dict[str, Any]:
     return {
         "document_id": row.document_id,
         "study_id": row.study_key,
         "filename": row.filename,
         "document_type": row.document_type,
+        "type": row.document_type,
         "mime_type": row.mime_type,
         "size": row.size,
         "hash": row.content_hash,
+        "source_hash": row.content_hash,
         "version": row.version,
         "uploaded_by": row.uploaded_by,
         "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
         "ingestion_status": row.ingestion_status,
         "classification_status": row.classification_status,
         "extraction_status": row.extraction_status,
+        "ingestion": row.ingestion_status,
+        "classification": row.classification_status,
+        "extraction": row.extraction_status,
+        "status": document_ui_status(row),
         "storage_key": row.storage_key,
         "safe_storage_name": row.safe_storage_name,
     }

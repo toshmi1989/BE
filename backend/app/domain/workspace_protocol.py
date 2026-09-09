@@ -80,12 +80,45 @@ def build_preview_from_draft(
         # Prefer draft registry summary order when present
         pass
 
+    field_bindings = {
+        "reference_product.dose": {
+            "section": "DOSING",
+            "label": "Reference dose",
+            "value": facts.get("reference_product.dose"),
+        },
+        "design.type": {
+            "section": "DESIGN",
+            "label": "Design",
+            "value": facts.get("design.type") or facts.get("design.crossover"),
+        },
+        "subjects.randomized_n": {
+            "section": "SUBJECTS",
+            "label": "Subjects N",
+            "value": facts.get("subjects.randomized_n") or facts.get("subjects.planned_n"),
+        },
+        "food.condition": {
+            "section": "FOOD",
+            "label": "Food",
+            "value": facts.get("food.condition"),
+        },
+        "pk.parameters": {
+            "section": "PK",
+            "label": "PK parameters",
+            "value": facts.get("pk.parameters"),
+        },
+    }
+
     return {
         "study_id": study_key,
         "protocol_id": draft_row.protocol_id if draft_row else (mem[-1]["protocol_id"] if mem else None),
+        "version": draft_row.version if draft_row else (mem[-1].get("version") if mem else None),
+        "status": draft_row.status if draft_row else (mem[-1].get("status") if mem else "DRAFT"),
         "snapshot_id": (draft_row.snapshot_id if draft_row else None) or (snap or {}).get("snapshot_id"),
+        "snapshot_version": (snap or {}).get("version"),
         "toc": [{"code": s["code"], "title": s["title"]} for s in sections],
         "sections": sections,
+        "tables": [],
+        "field_bindings": field_bindings,
         "source": "ProtocolDraft+CanonicalSnapshot",
         "legacy_project_path": False,
         "stale_template_values": False,

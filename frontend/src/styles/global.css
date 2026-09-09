@@ -410,3 +410,384 @@ button.linkish {
   margin: 0.4rem 0;
 }
 
+/* Phase 26 — writer workflow UX */
+.next-action {
+  border: 2px solid var(--line);
+  background: #fff;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.next-action-critical {
+  border-color: #c98989;
+  background: #fdf6f6;
+}
+
+.next-action-warn {
+  border-color: #d4b96a;
+  background: #fdfaf0;
+}
+
+.next-action-info {
+  border-color: #9cbc9f;
+  background: #f5faf6;
+}
+
+.empty-state {
+  border: 1px dashed var(--line);
+  padding: 1rem;
+  margin: 1rem 0;
+  background: #fafafa;
+}
+
+.decision-card {
+  border: 1px solid var(--line);
+  padding: 0.85rem;
+  margin: 0.75rem 0;
+  background: #fff;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.form-grid input {
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+}
+
+.btn-primary-nav {
+  width: 100%;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.5rem;
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  background: #eef6f0;
+  color: var(--ink);
+}
+
+.nav-divider {
+  margin: 0.75rem 0 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.checklist-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
+.doc-actions {
+  margin: 0.75rem 0;
+}
+
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.inline-edit {
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  margin-top: 1rem;
+  background: #fff;
+}
+
+.inline-edit label {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+.protocol-preview .toc {
+  margin: 0.75rem 0;
+}
+
+.preview-section {
+  border-top: 1px solid var(--line);
+  padding: 0.5rem 0;
+}
+
+.preview-block {
+  max-height: 24rem;
+  overflow: auto;
+  background: #f7f7f7;
+  padding: 0.5rem;
+}
+
+.blocker-list {
+  list-style: none;
+  padding: 0;
+}
+
+.blocker-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  background: #fff;
+}
+
+button.secondary {
+  background: #f3f3f3;
+}
+
+.study-badges {
+  margin-bottom: 0.35rem;
+}
+
+/* Phase 27 — guided writer workflow */
+.progress-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  min-width: 7rem;
+}
+
+.progress-step-label {
+  font-weight: 600;
+  text-align: left;
+}
+
+.progress-step.status-green {
+  border-color: #9cbc9f;
+}
+
+.progress-step.status-yellow {
+  border-color: #d4b96a;
+}
+
+.progress-step.status-red {
+  border-color: #c98989;
+}
+
+.field-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 92vw);
+  height: 100vh;
+  overflow: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 1rem;
+  z-index: 100;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.08);
+}
+
+.field-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.field-drawer section {
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-drawer h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.workspace.with-field-drawer .workspace-main {
+  margin-right: min(420px, 92vw);
+}
+
+.wizard-panel {
+  margin-bottom: 1rem;
+}
+
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.wizard-steps li {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line);
+  font-size: 0.85rem;
+  background: #fafafa;
+}
+
+.wizard-steps li.active {
+  border-color: var(--accent);
+  background: #eef6f0;
+  font-weight: 600;
+}
+
+.wizard-steps li.done {
+  opacity: 0.75;
+}
+
+.wizard-analyze-stages {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+}
+
+.wizard-analyze-stages li {
+  padding: 0.25rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.wizard-analyze-stages li.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.preview-layout {
+  display: grid;
+  grid-template-columns: 180px 1fr 220px;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  min-height: 16rem;
+}
+
+.preview-toc {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.65rem;
+  font-size: 0.85rem;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.preview-toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.35rem 0 0;
+}
+
+.preview-toc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.preview-toc a:hover {
+  text-decoration: underline;
+}
+
+.preview-sections {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.65rem;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.preview-side {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.65rem;
+  font-size: 0.85rem;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.preview-binding {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.preview-field-detail {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.blocker-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  background: #fff;
+}
+
+.docx-confirm {
+  border: 2px solid var(--accent);
+  background: #f5faf6;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.decision-outcome-banner {
+  border: 1px solid #9cbc9f;
+  background: #eef6f0;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.secondary-issues {
+  margin-bottom: 1rem;
+}
+
+.secondary-issues ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.notice-banner {
+  padding: 0.35rem 0;
+}
+
+.row-selected {
+  background: #f5faf6;
+}
+
+@media (max-width: 900px) {
+  .preview-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace.with-field-drawer .workspace-main {
+    margin-right: 0;
+  }
+}
+

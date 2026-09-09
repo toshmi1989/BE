@@ -27,13 +27,18 @@ from app.domain.workspace_authority import (
     read_readiness,
     read_workspace_summary,
 )
-from app.domain.workspace_documents import list_study_documents, store_study_document
+from app.domain.workspace_documents import list_study_documents, store_study_document, update_document_classification
 from app.domain.workspace_protocol import (
     build_preview_from_draft,
     generate_docx_artifact,
     get_artifact,
     list_artifacts,
     read_artifact_bytes,
+)
+from app.domain.workspace_progress import (
+    build_field_detail,
+    compute_writer_progress,
+    dependency_impact_for_decision,
 )
 from app.domain.workspace_rbac import ROLES, require
 from app.domain.workspace_snapshots import create_snapshot, list_snapshots
@@ -44,7 +49,7 @@ router = APIRouter(tags=["study-workspace"])
 
 
 class WorkflowIn(BaseModel):
-    use_golden_fixture: bool = True
+    use_golden_fixture: bool = False
     run_research: bool = False
     prepare_protocol_draft: bool = True
     auto_approve_decisions: bool = False
@@ -384,7 +389,18 @@ def expert_decision(
         reason=payload.rationale,
     )
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
-    return {"decision_id": did, "status": payload.status, "snapshot": snap, "study_mutated": False}
+    impact = dependency_impact_for_decision(payload.question)
+    return {
+        "decision_id": did,
+        "status": payload.status,
+        "snapshot": snap,
+        "study_mutated": False,
+        "auto_approved": False,
+        "affects": impact,
+        "recalculation_required": bool(impact),
+        "message": "Decision approved" if payload.status == "APPROVED" else f"Decision {payload.status}",
+        "affected_protocol_sections": ["Protocol sections linked to decision domain"],
+    }
 
 
 @router.post("/studies/{study_id}/documents/upload")
@@ -422,6 +438,59 @@ def list_documents(
 ) -> dict[str, Any]:
     _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
     return {"study_id": study_id, "documents": list_study_documents(db, study_id)}
+
+
+class ClassifyDocumentIn(BaseModel):
+    document_type: str
+    actor: str = "writer"
+
+
+@router.post("/studies/{study_id}/documents/{document_id}/classify")
+def classify_document(
+    study_id: str,
+    document_id: str,
+    payload: ClassifyDocumentIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    auth = _auth_for_study(study_id, permission="upload_documents", authorization=authorization, db=db)
+    try:
+        out = update_document_classification(
+            db,
+            study_key=study_id,
+            document_id=document_id,
+            document_type=payload.document_type,
+            actor=auth.email if auth else payload.actor,
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail={"message": e.message, "field": e.field}) from e
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    return out
+
+
+@router.get("/studies/{study_id}/writer-progress")
+def writer_progress(
+    study_id: str,
+    package_id: str | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    return compute_writer_progress(db, study_id, package_id=package_id)
+
+
+@router.get("/studies/{study_id}/canonical-facts/{field_path:path}/detail")
+def canonical_fact_detail(
+    study_id: str,
+    field_path: str,
+    package_id: str | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    return build_field_detail(study_id, field_path, package_id=package_id)
 
 
 @router.post("/studies/{study_id}/workflow/run")
@@ -577,3 +646,129 @@ def post_audit(
     )
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
     return entry
+
+
+class CreateStudyIn(BaseModel):
+    study_key: str | None = None
+    title: str | None = None
+    sponsor: str | None = None
+    product: str | None = None
+    dose: str | None = None
+    is_demo: bool = False
+
+
+class FactReviewIn(BaseModel):
+    field: str
+    old_value: Any = None
+    new_value: Any = None
+    reason: str
+    actor: str = "writer"
+    action: str = "REVIEW"  # REVIEW | EDIT_PROPOSAL
+
+
+class DecisionEvidenceRequestIn(BaseModel):
+    decision_id: str | None = None
+    question: str | None = None
+    reason: str
+    actor: str = "writer"
+
+
+@router.post("/studies/create")
+def create_workspace_study(
+    payload: CreateStudyIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Create a real (non-demo) study for writer workflow — no Legacy console."""
+    from uuid import uuid4
+
+    if payload.is_demo:
+        raise HTTPException(status_code=400, detail="Use demo workflow for demo studies")
+    key = (payload.study_key or f"STUDY-{uuid4().hex[:10]}").strip()
+    if key.upper().startswith("UPDCB") and "DEMO" not in key.upper():
+        # Keep golden fixture key reserved for demo path
+        if key == "UPDCB-02-BE-2026":
+            raise HTTPException(status_code=400, detail="Reserved demo study key — use Run demo UPDCB workflow")
+    auth = None
+    from app.domain.auth_service import resolve_auth
+
+    auth = resolve_auth(db, authorization, required=None)
+    append_audit(
+        key,
+        event="STUDY_CREATED",
+        who=auth.email if auth else "writer",
+        what=key,
+        new_value={
+            "title": payload.title,
+            "sponsor": payload.sponsor,
+            "product": payload.product,
+            "dose": payload.dose,
+            "is_demo": False,
+        },
+        reason="new_study_ux",
+    )
+    return {
+        "study_key": key,
+        "title": payload.title,
+        "sponsor": payload.sponsor,
+        "product": payload.product,
+        "dose": payload.dose,
+        "is_demo": False,
+        "next": "upload_documents",
+        "legacy_required": False,
+    }
+
+
+@router.post("/studies/{study_id}/canonical-facts/review")
+def review_canonical_fact(
+    study_id: str,
+    payload: FactReviewIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Record field review/edit proposal with audit — never silently mutates verified SoT."""
+    auth = _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    if not str(payload.reason or "").strip():
+        raise HTTPException(status_code=400, detail="reason required")
+    ensure_db_authoritative(db, study_id)
+    entry = append_audit(
+        study_id,
+        event="CANONICAL_FACT_REVIEW" if payload.action == "REVIEW" else "CANONICAL_FACT_EDIT_PROPOSAL",
+        who=auth.email if auth else payload.actor,
+        what=payload.field,
+        old_value=payload.old_value,
+        new_value=payload.new_value,
+        reason=payload.reason,
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    return {
+        "ok": True,
+        "silent_mutation": False,
+        "study_mutated": False,
+        "audit": entry,
+        "note": "Verified Study facts are not silently overwritten; expert decision may still be required",
+    }
+
+
+@router.post("/studies/{study_id}/decisions/request-evidence")
+def request_decision_evidence(
+    study_id: str,
+    payload: DecisionEvidenceRequestIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Writer requests additional evidence — does not auto-approve or resolve conflicts."""
+    auth = _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    if not str(payload.reason or "").strip():
+        raise HTTPException(status_code=400, detail="reason required")
+    ensure_db_authoritative(db, study_id)
+    entry = append_audit(
+        study_id,
+        event="EVIDENCE_REQUESTED",
+        who=auth.email if auth else payload.actor,
+        what=payload.decision_id or payload.question or "decision",
+        reason=payload.reason,
+        new_value={"decision_id": payload.decision_id, "question": payload.question},
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    return {"ok": True, "auto_approved": False, "audit": entry}

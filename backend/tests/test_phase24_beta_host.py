@@ -1,4 +1,4 @@
-"""Phase 24 — Beta host activation (0.30.0). No fabricated evidence."""
+"""Phase 24 — Beta host activation (0.32.0). No fabricated evidence."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ def setup_function() -> None:
 
 
 def test_version_0_29_0() -> None:
-    assert Settings().app_version == "0.30.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.30.0"
+    assert Settings().app_version == "0.32.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
 
 
 def test_packages_still_below_10_not_invented() -> None:
@@ -63,7 +63,7 @@ def test_entry_gate_still_not_ready() -> None:
 
 def test_api_activation() -> None:
     client = TestClient(create_app())
-    assert client.get("/api/health").json()["version"] == "0.30.0"
+    assert client.get("/api/health").json()["version"] == "0.32.0"
     r = client.get("/api/field-study/activation/phase24")
     assert r.status_code == 200
     body = r.json()

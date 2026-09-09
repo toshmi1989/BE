@@ -912,8 +912,8 @@ def test_v02_workflow_without_ai():
 
 
 def test_v03_version_0170():
-    assert get_settings().app_version == "0.30.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.30.0"
+    assert get_settings().app_version == "0.32.0"
+    assert PROTOCOL_GENERATOR_VERSION == "0.32.0"
 
 
 # ---------------------------------------------------------------------------
