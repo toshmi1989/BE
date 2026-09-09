@@ -1,0 +1,8 @@
+{
+  "status": "BLOCKED",
+  "blocking_reasons": [
+    "missing sponsor",
+    "ProtocolDraft is BLOCKED",
+    "critical unresolved: ['{{SIGNATURE.SPONSOR}}', '{{SPONSOR.NAME}}', '{{SPONSOR_PERSONS.DETAILS}}', '{{STUDY.COUNTRY}}']"
+  ]
+}

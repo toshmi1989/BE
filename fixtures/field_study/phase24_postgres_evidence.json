@@ -1,0 +1,51 @@
+{
+  "phase": 24,
+  "executed_at": "2026-09-09T02:57:36.197664+00:00",
+  "fabricated": false,
+  "POSTGRES_EXECUTION_BLOCKED": true,
+  "postgres_status": "POSTGRES_EXECUTION_BLOCKED",
+  "postgres_native": false,
+  "docker_available": false,
+  "docker_compose_beta": "NOT_EXECUTED",
+  "BACKUP_OK": false,
+  "RESTORE_OK": false,
+  "RESTART_OK": false,
+  "BACKUP_RESTORE_OK": false,
+  "RESTART_DURABILITY_OK": false,
+  "auth_required_env": false,
+  "steps": {
+    "docker": {
+      "result": "BLOCK",
+      "detail": "docker not on PATH"
+    },
+    "health": {
+      "result": "BLOCK",
+      "detail": "skipped \u2014 Docker unavailable"
+    },
+    "readiness": {
+      "result": "BLOCK",
+      "detail": "skipped \u2014 Docker unavailable"
+    },
+    "compose_up": {
+      "result": "BLOCK",
+      "detail": "docker compose -f docker-compose.beta.yml up -d NOT executed"
+    },
+    "backup": {
+      "result": "BLOCK",
+      "detail": "not executed"
+    },
+    "restore": {
+      "result": "BLOCK",
+      "detail": "not executed"
+    },
+    "restart": {
+      "result": "BLOCK",
+      "detail": "not executed"
+    }
+  },
+  "blockers": [
+    "Docker CLI not available",
+    "AUTH_REQUIRED is not true"
+  ],
+  "note": "File DB supplemental scripts must not be treated as Postgres beta proof. This evidence file is written only from actual probe results."
+}

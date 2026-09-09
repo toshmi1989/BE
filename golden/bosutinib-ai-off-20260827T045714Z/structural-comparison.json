@@ -1,0 +1,12 @@
+{
+  "template_tables": 33,
+  "generated_tables": 33,
+  "template_paragraphs": 1432,
+  "generated_paragraphs": 650,
+  "template_checksum_unchanged": true,
+  "critical_values_present": {
+    "protocol_number": true,
+    "bosutinib_or_product": true
+  },
+  "byte_equality_required": false
+}

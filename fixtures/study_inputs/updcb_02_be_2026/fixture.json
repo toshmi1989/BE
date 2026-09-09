@@ -1,0 +1,52 @@
+{
+  "fixture_id": "UPDCB-02-BE-2026-REAL-01",
+  "protocol_number": "UPDCB-02-BE-2026",
+  "version": "0.15.1",
+  "description": "Real writer Golden Input Package — binary-first under raw/; text baselines under extracted/",
+  "layout": {
+    "raw": "raw/",
+    "extracted": "extracted/",
+    "expected": "expected/",
+    "sources_compat": "sources/"
+  },
+  "documents": [
+    {
+      "type": "CHECKLIST",
+      "filename": "checklist.docx",
+      "role": "INPUT",
+      "source_id": "SRC-CHECKLIST-UPDCB",
+      "original_filename": "Упадацитиниб_15 мг_ПРОМОМЕД РУС_Чек-лист для подготовки протокола.docx"
+    },
+    {
+      "type": "SYNOPSIS",
+      "filename": "synopsis.docx",
+      "role": "INPUT",
+      "source_id": "SRC-SYNOPSIS-UPDCB",
+      "original_filename": "Синопсис_Упадацитиниб 15 мг_ПРОМОМЕД РУС_(2)_08.06.26_чист.docx"
+    },
+    {
+      "type": "SMPC",
+      "filename": "smpc.pdf",
+      "role": "INPUT",
+      "source_id": "SRC-SMPC-RANVEK",
+      "original_filename": "02001-SmPC-v2 (1753497451) [0002] штамп МЗ.pdf"
+    },
+    {
+      "type": "GOLDEN_PROTOCOL",
+      "filename": "golden_protocol.docx",
+      "role": "REFERENCE_OUTPUT",
+      "source_id": "SRC-GOLDEN-UPDCB",
+      "original_filename": "ПКИ_UPDCB-02-BE-2026_corr_21.08.2026_31.08.2026.docx"
+    }
+  ],
+  "expected_conflict": {
+    "field_path": "reference_product.dose",
+    "values": ["30 mg", "15 mg"],
+    "sources": ["CHECKLIST", "SYNOPSIS", "SMPC"]
+  },
+  "notes": [
+    "Binary path under raw/ is first-class",
+    "extracted/ text dumps are equivalence baselines only",
+    "Golden protocol is NOT a Study source of truth"
+  ]
+}

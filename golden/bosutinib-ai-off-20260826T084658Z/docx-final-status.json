@@ -1,0 +1,9 @@
+{
+  "status": "BLOCKED",
+  "blocking_reasons": [
+    "missing sponsor",
+    "unresolved fields present (14)",
+    "critical unresolved: ['{{SIGNATURE.SPONSOR}}', '{{SPONSOR.NAME}}', '{{SPONSOR_PERSONS.DETAILS}}', '{{STUDY.COUNTRY}}']"
+  ],
+  "note": "protocol-final.docx not written — correct gate without sponsor"
+}

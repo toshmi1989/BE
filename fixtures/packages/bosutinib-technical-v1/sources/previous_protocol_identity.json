@@ -1,0 +1,12 @@
+{
+  "classification": "TECHNICAL_FIXTURE",
+  "previous_identity": {
+    "sponsor": "OLD_SPONSOR_TECHNICAL",
+    "protocol_number": "BE-OLD-LEGACY-001",
+    "product": "OldProduct",
+    "dose": "500 mg",
+    "randomized_n": 46,
+    "investigator": "Old Investigator"
+  },
+  "note": "Synthetic previous-protocol identity for LEGACY_SUSPECTED tests only."
+}

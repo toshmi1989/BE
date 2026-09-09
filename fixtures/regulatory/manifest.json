@@ -1,0 +1,100 @@
+{
+  "manifest_id": "regulatory-evidence-pack-v1",
+  "package_status": "PARTIAL",
+  "notes": "Official Decision 85 / FDA / EMA / SmPC files are NOT present in the repository. Do not fabricate them. Interview claims are EXPERT_INTERVIEW only.",
+  "interview_claims_path": "interview/interview_claims.json",
+  "knowledge_gaps": [
+    {
+      "code": "REG.DECISION85.MISSING",
+      "domain": "EEC_REGULATORY",
+      "question": "Official Decision 85 document file is not in the repository",
+      "blocking": true,
+      "interview_hints": ["p.18 reference selection", "p.44 food", "p.46 fed meal", "pp.41,56 endogenous", "p.50 analyte"]
+    },
+    {
+      "code": "REG.FDA.MISSING",
+      "domain": "FDA_GUIDANCE",
+      "question": "Relevant FDA guidance PDF/DOCX not present",
+      "blocking": false
+    },
+    {
+      "code": "REG.EMA.MISSING",
+      "domain": "EMA_GUIDANCE",
+      "question": "Relevant EMA guidance PDF/DOCX not present",
+      "blocking": false
+    },
+    {
+      "code": "REG.SMPC.MISSING",
+      "domain": "SMPC_OHLP",
+      "question": "Real reference-product SmPC/ОХЛП not present (golden excerpts are TECHNICAL_FIXTURE only)",
+      "blocking": true
+    },
+    {
+      "code": "REG.SAFETY.POST_2026_PROTOCOL.MISSING",
+      "domain": "SAFETY",
+      "question": "Expert interview referenced protocols after June 2026 as practical safety reference — file not present",
+      "blocking": true
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "SRC-DECISION85",
+      "source_class": "EEC_REGULATORY",
+      "title": "Decision No. 85 (EEC) — expected official document",
+      "issuing_authority": "EEC",
+      "document_identifier": "Decision-85",
+      "jurisdiction": "EAEU",
+      "language": "ru",
+      "relative_path": "eec/decision_85.pdf",
+      "source_version": "1",
+      "ingestion_status": "MISSING",
+      "verification_status": "UNVERIFIED",
+      "knowledge_gap_code": "REG.DECISION85.MISSING",
+      "notes": "Interview-derived page hints only until file is added by user/developer"
+    },
+    {
+      "source_id": "SRC-FDA-BE",
+      "source_class": "FDA_GUIDANCE",
+      "title": "FDA BE guidance (slot — file not present)",
+      "issuing_authority": "FDA",
+      "jurisdiction": "US",
+      "language": "en",
+      "relative_path": "fda/be_guidance.pdf",
+      "ingestion_status": "MISSING",
+      "verification_status": "UNVERIFIED",
+      "knowledge_gap_code": "REG.FDA.MISSING"
+    },
+    {
+      "source_id": "SRC-EMA-BE",
+      "source_class": "EMA_GUIDANCE",
+      "title": "EMA BE guideline (slot — file not present)",
+      "issuing_authority": "EMA",
+      "jurisdiction": "EU",
+      "language": "en",
+      "relative_path": "ema/be_guideline.pdf",
+      "ingestion_status": "MISSING",
+      "verification_status": "UNVERIFIED",
+      "knowledge_gap_code": "REG.EMA.MISSING"
+    },
+    {
+      "source_id": "SRC-SMPC-REF",
+      "source_class": "SMPC_OHLP",
+      "title": "Reference product SmPC/ОХЛП (slot — file not present)",
+      "relative_path": "smPC/reference_smpc.pdf",
+      "ingestion_status": "MISSING",
+      "verification_status": "UNVERIFIED",
+      "knowledge_gap_code": "REG.SMPC.MISSING"
+    },
+    {
+      "source_id": "SRC-INTERVIEW-MW",
+      "source_class": "EXPERT_INTERVIEW",
+      "title": "Medical writer interview-derived claims (practice, not regulation)",
+      "issuing_authority": "Internal expert interview",
+      "relative_path": "interview/interview_claims.json",
+      "source_version": "1",
+      "ingestion_status": "PENDING",
+      "verification_status": "UNVERIFIED",
+      "notes": "SOURCE_TYPE=EXPERT_INTERVIEW — must not be treated as VERIFIED regulatory requirement"
+    }
+  ]
+}

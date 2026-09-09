@@ -1,0 +1,68 @@
+[
+  {
+    "claim_id": "INT-REF-01",
+    "domain": "REFERENCE",
+    "field_name": "reference_selection",
+    "exact_text": "Reference product selection should be justified per Decision 85 p.18 (writer interview).",
+    "normalized_claim": "Interview practice: justify reference product using Decision 85 p.18",
+    "related_rule_codes": ["REF-01"],
+    "interview_section": "reference_product",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  },
+  {
+    "claim_id": "INT-FOOD-01",
+    "domain": "FOOD",
+    "field_name": "food_condition",
+    "exact_text": "Food determination referenced to Decision 85 p.44 (writer interview).",
+    "normalized_claim": "Interview practice: food condition per Decision 85 p.44",
+    "related_rule_codes": ["FOOD-01"],
+    "interview_section": "food",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  },
+  {
+    "claim_id": "INT-FOOD-02",
+    "domain": "FOOD",
+    "field_name": "fed_meal",
+    "exact_text": "Fed meal concept referenced to Decision 85 p.46 (writer interview).",
+    "normalized_claim": "Interview practice: fed meal per Decision 85 p.46",
+    "related_rule_codes": ["FOOD-02"],
+    "interview_section": "food",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  },
+  {
+    "claim_id": "INT-ENDOG-01",
+    "domain": "DESIGN",
+    "field_name": "endogenous",
+    "exact_text": "Endogenous compounds discussed with Decision 85 pp.41,56 (writer interview).",
+    "normalized_claim": "Interview practice: endogenous compounds Decision 85 pp.41,56",
+    "related_rule_codes": [],
+    "interview_section": "design",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  },
+  {
+    "claim_id": "INT-ANALYTE-01",
+    "domain": "ANALYTE",
+    "field_name": "analyte_selection",
+    "exact_text": "Analyte selection referenced to Decision 85 p.50 subsection 6 section III of Rules (writer interview).",
+    "normalized_claim": "Interview practice: analyte selection Decision 85 p.50 §6 III",
+    "related_rule_codes": ["ANALYTE-01"],
+    "interview_section": "analyte",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  },
+  {
+    "claim_id": "INT-SAFETY-01",
+    "domain": "SAFETY",
+    "field_name": "be_safety",
+    "exact_text": "Practical BE safety reference: protocols after June 2026 (writer interview). Not a verified regulatory checklist.",
+    "normalized_claim": "Interview practice: post-June-2026 protocols as practical safety reference",
+    "related_rule_codes": [],
+    "interview_section": "safety",
+    "source_type": "EXPERT_INTERVIEW",
+    "is_regulatory_document": false
+  }
+]

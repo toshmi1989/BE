@@ -1,0 +1,82 @@
+{
+  "phase": 20,
+  "executed_at": "2026-09-08T13:12:23.856569+00:00",
+  "database_url_scheme": "sqlite",
+  "auth_required": true,
+  "auth_secret_configured": true,
+  "docker_compose_beta": "NOT_EXECUTED",
+  "docker_available": false,
+  "postgres_native": false,
+  "steps": {
+    "workflow_run": {
+      "ok": true,
+      "workflow_id": "WF-e73e71185d7d",
+      "drafts": 1,
+      "snapshots": 1
+    },
+    "cache_cleared": {
+      "ok": true
+    },
+    "backup_restore": {
+      "ok": true,
+      "drafts_restored": 1,
+      "snapshots_restored": 1,
+      "protocol_id_match": true
+    },
+    "restart_durability": {
+      "ok": true,
+      "study_available": true,
+      "workspace_drafts_available": true,
+      "snapshots_available": true,
+      "note": "Simulated backend restart via cache invalidate + DB hydrate"
+    }
+  },
+  "population": {
+    "real_full": 1,
+    "real_partial": 1,
+    "intake_pending_slots": 8,
+    "meets_minimum_10": false,
+    "limitation": "Phase 20 explicit limitation: only 1 full REAL + 1 REAL_PARTIAL package in-repo. Writer-provided sanitized intakes required for ≥10. Synthetic cases remain regression-only and are never counted as REAL.",
+    "real_full_sanitized": 1,
+    "real_partial_sanitized": 1,
+    "unsanitized_blocked": [],
+    "empty_intake_slots": [
+      "REAL-INTAKE-03",
+      "REAL-INTAKE-04",
+      "REAL-INTAKE-05",
+      "REAL-INTAKE-06",
+      "REAL-INTAKE-07",
+      "REAL-INTAKE-08",
+      "REAL-INTAKE-09",
+      "REAL-INTAKE-10"
+    ],
+    "meets_minimum_10_full_real": false,
+    "synthetic_counted_as_real": false,
+    "production_gate": "READY-WITH-BLOCKERS"
+  },
+  "production_readiness": {
+    "gate": "NOT READY",
+    "blockers": [
+      "<10 distinct full REAL packages",
+      "no completed paired writer sessions",
+      "timing aggregates unpublished (insufficient observed sample)",
+      "package intake incomplete"
+    ],
+    "real_full_packages": 1,
+    "real_partial_packages": 1,
+    "paired_sessions_complete": 0,
+    "production_ready_claimed": false,
+    "note": "PRODUCTION-READY requires evidence; tests alone are insufficient"
+  },
+  "limitations": [
+    "Postgres compose not executed: Docker/Postgres unavailable in this environment; AUTH_REQUIRED file-DB backup/restore + restart durability executed instead"
+  ],
+  "BACKUP_RESTORE_OK": true,
+  "RESTART_DURABILITY_OK": true,
+  "B-005_execution": {
+    "file_db_backup_restore": "EXECUTED_OK",
+    "auth_required": true,
+    "postgres_compose": "NOT_EXECUTED_DOCKER_ABSENT",
+    "status": "PARTIAL"
+  }
+}

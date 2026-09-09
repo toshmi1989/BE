@@ -1,0 +1,119 @@
+{
+  "overall": "BLOCK",
+  "checks": [
+    {
+      "id": "real_package_count",
+      "result": "BLOCK",
+      "detail": "full=1"
+    },
+    {
+      "id": "sanitized_packages",
+      "result": "PASS",
+      "detail": "sanitized=2"
+    },
+    {
+      "id": "writers",
+      "result": "BLOCK",
+      "detail": "writers=0"
+    },
+    {
+      "id": "paired_sessions",
+      "result": "BLOCK",
+      "detail": "paired=0"
+    },
+    {
+      "id": "postgres",
+      "result": "BLOCK",
+      "detail": "not executed"
+    },
+    {
+      "id": "authentication",
+      "result": "BLOCK",
+      "detail": "auth off"
+    },
+    {
+      "id": "auth_secret_strength",
+      "result": "BLOCK",
+      "detail": "strong secret configured (value not shown)"
+    },
+    {
+      "id": "backup",
+      "result": "BLOCK",
+      "detail": "missing"
+    },
+    {
+      "id": "restore",
+      "result": "BLOCK",
+      "detail": "restore bundled with backup criterion"
+    },
+    {
+      "id": "restart",
+      "result": "BLOCK",
+      "detail": "missing"
+    },
+    {
+      "id": "open_P0",
+      "result": "PASS",
+      "detail": "open_P0=[]"
+    },
+    {
+      "id": "open_P1",
+      "result": "WARN",
+      "detail": "open_P1=['B-002-PACK', 'B-003', 'B-005']"
+    },
+    {
+      "id": "tenant_isolation",
+      "result": "PASS",
+      "detail": "tenant isolation covered by Phase 17.5 regression (verify on beta host)"
+    }
+  ],
+  "entry": {
+    "state": "BETA_NOT_READY",
+    "classification": "NOT_READY",
+    "entry_ready": false,
+    "blockers": [
+      "REAL_FULL_PACKAGES=1 (need >=10 or documented override)",
+      "WRITERS=0",
+      "PAIRED_SESSIONS=0 (need >=5)",
+      "POSTGRES_EXECUTED=false",
+      "AUTH_REQUIRED=false",
+      "STRONG_AUTH_SECRET=false",
+      "BACKUP_RESTORE_EXECUTED=false (file DB does not count)",
+      "RESTART_DURABILITY_EXECUTED=false (Postgres-backed required)"
+    ],
+    "criteria": {
+      "REAL_FULL_PACKAGES_ge_10": false,
+      "REAL_FULL_PACKAGES_count": 1,
+      "package_override_documented": false,
+      "package_override_reason": null,
+      "WRITERS_ge_1": false,
+      "writers_count": 0,
+      "PAIRED_SESSIONS_ge_5": false,
+      "paired_sessions_complete": 0,
+      "POSTGRES_EXECUTED": false,
+      "AUTH_REQUIRED": false,
+      "STRONG_AUTH_SECRET": false,
+      "BACKUP_RESTORE_EXECUTED": false,
+      "RESTART_DURABILITY_EXECUTED": false,
+      "no_unresolved_critical_security_or_integrity": true,
+      "sanitized_package_count": 2,
+      "timing_aggregates_eligible": false,
+      "dq_silent_drops": false
+    },
+    "open_P0": [],
+    "open_P1": [
+      "B-002-PACK",
+      "B-003",
+      "B-005"
+    ],
+    "min_paired_for_aggregate": 5,
+    "secrets_exposed": false,
+    "production_ready_claimed": false,
+    "note": "Do not fabricate packages/sessions. File DB ops are supplemental and do not satisfy Postgres/backup/restart criteria.",
+    "evaluated_at": "2026-09-09T02:29:31.867662+00:00"
+  },
+  "block_count": 9,
+  "warn_count": 1,
+  "pass_count": 3,
+  "secrets_exposed": false
+}

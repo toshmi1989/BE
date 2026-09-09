@@ -1,0 +1,36 @@
+{
+  "claims": [
+    {
+      "claim_id": "b4dc0f7f-ecbe-4791-9bad-d100fa760d7f",
+      "evidence_id": "1940d665-712d-4c59-9e7e-4d9f2223cecd",
+      "field_name": "tmax",
+      "value": "6 часов",
+      "normalized_value": {
+        "min": 6.0,
+        "max": 6.0,
+        "unit": "h",
+        "original_unit": "h"
+      },
+      "unit": "h",
+      "source_id": "e57b5f1b-b1a2-4384-abe1-da3207a2e368",
+      "document_id": "7b825607-8c14-4302-8aad-bce84c7537b8",
+      "page": 1,
+      "chunk_id": "e556398d-79a4-4241-b934-bd11043e9d84",
+      "evidence_text": "tmax бозутиниба в среднем составляет 6 часов",
+      "confidence": 0.94,
+      "status": "PROPOSED",
+      "origin": "AI_PROPOSED",
+      "model": "llama3.2"
+    }
+  ],
+  "study_unchanged_without_verify": true,
+  "analyte_before": {
+    "tmax_min": 1.0,
+    "half_life_min": 10.0
+  },
+  "analyte_after": {
+    "tmax_min": 1.0,
+    "half_life_min": 10.0
+  },
+  "note": "Mock may yield 0 claims on Cyrillic-only excerpts; still proves AI path does not mutate Study"
+}

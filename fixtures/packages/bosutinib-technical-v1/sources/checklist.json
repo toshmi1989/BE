@@ -1,0 +1,10 @@
+{
+  "classification": "TECHNICAL_FIXTURE",
+  "fields": {
+    "inn": "bosutinib",
+    "dose": "400 mg",
+    "design": "CROSSOVER_2X2",
+    "food": "FED"
+  },
+  "note": "Checklist surrogate for pipeline mapping tests — not a sponsor checklist."
+}

@@ -1,0 +1,30 @@
+{
+  "fixture_id": "UPDCB-02-BE-2026-REAL-01",
+  "fields": {
+    "study.protocol_number": "UPDCB-02-BE-2026",
+    "sponsor.name": "ООО «ПРОМОМЕД РУС»",
+    "test_product.dose": "15 mg",
+    "design.randomized": true,
+    "design.open_label": true,
+    "design.crossover": true,
+    "design.periods": 2,
+    "design.sequences": 2,
+    "design.groups": 4,
+    "subjects.sex": "male",
+    "subjects.age_min": 18,
+    "subjects.age_max": 45,
+    "subjects.screened_n": 62,
+    "subjects.randomized_n": 56,
+    "subjects.group_allocation": "1:1:1:1",
+    "washout.duration": 7,
+    "sampling.total_points": 19,
+    "sampling.times": [0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 6, 8, 10, 12, 16, 24, 36, 48, 72],
+    "bioanalysis.analyte": "upadacitinib",
+    "bioanalysis.method": "LC-MS/MS",
+    "statistics.method": "ANOVA",
+    "statistics.transformation": "log",
+    "statistics.confidence_interval": "90%",
+    "statistics.acceptance_interval": "80.00-125.00%"
+  },
+  "notes": "Semantic expectations for Golden writer package — not medical rules"
+}

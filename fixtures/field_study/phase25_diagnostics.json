@@ -1,0 +1,36 @@
+{
+  "phase": 25,
+  "collected_at": "2026-09-09T03:05:24.876993+00:00",
+  "version": "0.30.0",
+  "git_revision": null,
+  "migration_head": "unavailable:ModuleNotFoundError",
+  "docker_cli": false,
+  "database_connectivity": "ok",
+  "database_url_scheme": "sqlite+pysqlite",
+  "auth_required": false,
+  "auth_secret_configured": true,
+  "auth_secret_value": null,
+  "ai_enabled": false,
+  "document_storage_root": "storage/documents",
+  "population": {
+    "real_full": 1,
+    "real_partial": 1,
+    "synthetic_counted_as_real": false
+  },
+  "beta_gate": {
+    "state": "BETA_NOT_READY",
+    "entry_ready": false,
+    "blockers": [
+      "REAL_FULL_PACKAGES=1 (need >=10 or documented override)",
+      "WRITERS=0",
+      "PAIRED_SESSIONS=0 (need >=5)",
+      "POSTGRES_EXECUTED=false",
+      "AUTH_REQUIRED=false",
+      "STRONG_AUTH_SECRET=false",
+      "BACKUP_RESTORE_EXECUTED=false (file DB does not count)",
+      "RESTART_DURABILITY_EXECUTED=false (Postgres-backed required)"
+    ]
+  },
+  "safe_env": {},
+  "secrets_included": false
+}

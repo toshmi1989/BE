@@ -1,0 +1,9 @@
+TECHNICAL_FIXTURE_ONLY — not a regulatory Design document.
+Source excerpts derived from BE_Protocol_Template_v2.0 body text used in golden E2E.
+
+Design type (from study fixture): CROSSOVER_2X2
+Food: FED (after meal)
+Product: bosutinib 400 mg film-coated tablets
+Reference: Bosulif (bosutinib) 400 mg
+Tmax excerpt: "tmax бозутиниба в среднем составляет 6 часов"
+t1/2 excerpt: "конечный период t1/2 бозутиниба составляет 35,5 часов"

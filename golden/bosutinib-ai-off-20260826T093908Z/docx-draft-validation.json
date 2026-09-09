@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "blocking": false,
+  "paragraph_count": 1249,
+  "table_count": 33,
+  "heading_count": 94,
+  "unresolved_found": [
+    "{{ELIGIBILITY.EXCLUSION}}",
+    "{{ELIGIBILITY.NON_INCLUSION}}",
+    "{{REFERENCE_PRODUCT.DOSAGE_FORM}}",
+    "{{REFERENCE_PRODUCT.MANUFACTURER}}",
+    "{{SPONSOR.NAME}}",
+    "{{TEST_PRODUCT.MANUFACTURER}}"
+  ],
+  "issues": [
+    {
+      "severity": "WARNING",
+      "code": "UNRESOLVED_PLACEHOLDER_DRAFT",
+      "message": "Draft mode allows unresolved: ['{{ELIGIBILITY.EXCLUSION}}', '{{ELIGIBILITY.NON_INCLUSION}}', '{{REFERENCE_PRODUCT.DOSAGE_FORM}}', '{{REFERENCE_PRODUCT.MANUFACTURER}}', '{{SPONSOR.NAME}}', '{{TEST_PRODUCT.MANUFACTURER}}']",
+      "details": {
+        "count": 6
+      }
+    }
+  ]
+}

@@ -1,0 +1,412 @@
+:root {
+  --bg: #f3f0ea;
+  --ink: #1c1a17;
+  --muted: #5c574e;
+  --panel: #fffdf8;
+  --line: #d9d2c5;
+  --accent: #0f5c4c;
+  --error: #8b1e1e;
+  --font-display: "Segoe UI", "Candara", sans-serif;
+  --font-body: "Segoe UI", "Candara", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 10% 0%, #e7efe9 0%, transparent 45%),
+    radial-gradient(circle at 90% 10%, #efe6d8 0%, transparent 40%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.app-header {
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1.25rem;
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+
+.tagline {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.dashboard h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.4rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.status-panel {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.status-panel h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.status-panel ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.error {
+  color: var(--error);
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.row input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
+}
+
+.row button,
+button.linkish {
+  font: inherit;
+  cursor: pointer;
+}
+
+.row button {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button.linkish {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  text-decoration: underline;
+}
+
+.project-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.project-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.grid-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.grid-form label,
+.status-panel > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.grid-form input,
+.status-panel > label input,
+.row select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
+  color: var(--ink);
+}
+
+.sampling-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.sampling-table th,
+.sampling-table td {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.sampling-table th {
+  background: #f7f3ec;
+}
+
+/* Phase 16 — Study Workspace */
+.app-shell-wide {
+  max-width: 1280px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.workspace-sidebar {
+  position: sticky;
+  top: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+
+.workspace-brand {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.workspace-sidebar .nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 0.2rem 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+
+.workspace-sidebar .nav-item.active,
+.workspace-sidebar .nav-item:hover {
+  border-color: var(--line);
+  background: #f7f3ec;
+}
+
+.workspace-main {
+  min-width: 0;
+}
+
+.study-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.summary-card {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.75rem;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+
+.status-green {
+  background: #e7f3ea;
+  border-color: #9cbc9f;
+}
+
+.status-yellow {
+  background: #f8f0d8;
+  border-color: #d4b96a;
+}
+
+.status-red {
+  background: #f6e4e4;
+  border-color: #c98989;
+}
+
+.status-gray {
+  background: #eee;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.error-banner {
+  color: var(--error);
+  border: 1px solid #c98989;
+  background: #f6e4e4;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.review-grid > div {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.75rem;
+  min-height: 12rem;
+}
+
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .review-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.beta-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.beta-nav button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.beta-nav button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.beta-ops {
+  display: grid;
+  gap: 1rem;
+}
+
+.beta-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1rem 1.1rem;
+}
+
+.beta-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.beta-slot {
+  border: 1px solid var(--line);
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.beta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.beta-ok {
+  color: var(--accent);
+}
+
+.beta-err {
+  color: var(--error);
+  white-space: pre-wrap;
+}
+
+.beta-panel label {
+  display: block;
+  margin: 0.4rem 0;
+}
+

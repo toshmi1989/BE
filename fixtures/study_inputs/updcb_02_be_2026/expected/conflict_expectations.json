@@ -1,0 +1,12 @@
+{
+  "field_path": "reference_product.dose",
+  "status": "OPEN",
+  "values": [
+    {"value": "30 mg", "document_type": "CHECKLIST"},
+    {"value": "15 mg", "document_type": "SYNOPSIS"},
+    {"value": "15 mg", "document_type": "SMPC"}
+  ],
+  "auto_resolve": false,
+  "majority_vote": false,
+  "study_mutation": false
+}

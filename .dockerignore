@@ -1,0 +1,14 @@
+.git
+**/.git
+**/node_modules
+backend/.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+frontend/dist
+golden
+**/.vite
+**/.env
+**/.env.beta
+**/.env.portal

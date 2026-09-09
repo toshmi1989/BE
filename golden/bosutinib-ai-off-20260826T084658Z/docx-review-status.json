@@ -1,0 +1,7 @@
+{
+  "status": "BLOCKED",
+  "blocking_reasons": [
+    "missing sponsor",
+    "critical unresolved: ['{{SIGNATURE.SPONSOR}}', '{{SPONSOR.NAME}}', '{{SPONSOR_PERSONS.DETAILS}}', '{{STUDY.COUNTRY}}']"
+  ]
+}

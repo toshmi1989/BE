@@ -1,0 +1,6 @@
+TECHNICAL_FIXTURE_ONLY
+Reference product fields mirrored from golden fixture:
+trade_name: Бозулиф
+inn: bosutinib
+dosage: 400 mg
+manufacturer: Pfizer

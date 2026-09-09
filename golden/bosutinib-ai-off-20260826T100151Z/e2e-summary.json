@@ -1,0 +1,28 @@
+{
+  "project_id": "e776a588-eaa1-4fde-a21d-86d13fb7a102",
+  "ai_enabled": false,
+  "validation_blocking": false,
+  "validation_summary": {
+    "critical": 0,
+    "errors": 0,
+    "warnings": 0,
+    "info": 0,
+    "blocking": false,
+    "total": 0
+  },
+  "protocol_status": "DRAFT",
+  "docx_draft": "READY",
+  "docx_review": "BLOCKED",
+  "docx_final": "BLOCKED",
+  "missing_data": [
+    "sponsor (study sponsor not stated as project sponsor in excerpts)",
+    "investigator / clinical site contacts",
+    "exact registration number",
+    "exact CVintra point estimate (only >30%)"
+  ],
+  "notes": [
+    "CV source text states '>30%'; planning CV=30 used as floor with expert note — not a precise published CVintra.",
+    "FINAL correctly BLOCKED: ['missing sponsor', 'unresolved fields present (36)', \"critical unresolved: ['{{ANALYTICAL_LAB.DETAILS}}', '{{EVIDENCE.CLINICAL_SUMMARY}}', '{{EVIDENCE.PHARMACOLOGY}}', '{{EVIDENCE.RISK_BENEFIT}}', '{{INVESTIGATORS.DETAILS}}', '{{INVESTIGATOR_AGREEMENT.DETAILS}}', '{{KEY_ORGS.DETAILS}}', '{{MEDICAL_EXPERT.DETAILS}}', '{{REFERENCE_PRODUCT.BATCH}}', '{{REFERENCE_PRODUCT.COUNTRY}}']\"]"
+  ],
+  "golden_dir": "golden\\bosutinib-ai-off-20260826T100151Z"
+}

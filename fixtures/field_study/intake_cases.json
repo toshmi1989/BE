@@ -1,0 +1,61 @@
+{
+  "updated_at": "2026-09-09T03:05:50.106130+00:00",
+  "cases": [
+    {
+      "case_id": "REAL-UPDCB-02-BE-2026",
+      "source_origin": "writer_golden_package",
+      "origin": "REAL",
+      "sanitization_status": "yes",
+      "document_inventory": {
+        "Checklist": "PRESENT",
+        "Synopsis_Design": "PRESENT",
+        "SmPC_OHLP": "PRESENT",
+        "Previous_protocol": "PRESENT",
+        "Supporting_evidence": "ABSENT",
+        "Other": "ABSENT"
+      },
+      "study_pattern": [
+        "conflicting_documents",
+        "crossover",
+        "complete_smpc",
+        "legacy_golden_reference"
+      ],
+      "intake_date": "2026-prior-phases",
+      "writer_assigned": null,
+      "state": "READY_FOR_SESSION",
+      "ready_for_session": true,
+      "synthetic": false,
+      "fabricated": false,
+      "notes": "Mandatory golden regression; golden protocol = reference artifact not SoT",
+      "created_at": "2026-09-09T03:05:50.106003+00:00",
+      "updated_at": "2026-09-09T03:05:50.106011+00:00"
+    },
+    {
+      "case_id": "REAL-DESIGN-ONLY-UPDCB",
+      "source_origin": "writer_incomplete_package",
+      "origin": "REAL_PARTIAL",
+      "sanitization_status": "yes",
+      "document_inventory": {
+        "Checklist": "ABSENT",
+        "Synopsis_Design": "PRESENT",
+        "SmPC_OHLP": "ABSENT",
+        "Previous_protocol": "ABSENT",
+        "Supporting_evidence": "ABSENT",
+        "Other": "ABSENT"
+      },
+      "study_pattern": [
+        "incomplete_package",
+        "missing_smpc"
+      ],
+      "intake_date": "2026-prior-phases",
+      "writer_assigned": null,
+      "state": "READY_FOR_SESSION",
+      "ready_for_session": true,
+      "synthetic": false,
+      "fabricated": false,
+      "notes": "Counts toward real population as PARTIAL only",
+      "created_at": "2026-09-09T03:05:50.106022+00:00",
+      "updated_at": "2026-09-09T03:05:50.106024+00:00"
+    }
+  ]
+}

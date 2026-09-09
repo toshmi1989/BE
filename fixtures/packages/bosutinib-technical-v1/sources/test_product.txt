@@ -1,0 +1,6 @@
+TECHNICAL_FIXTURE_ONLY
+Test product fields mirrored from golden Bosutinib fixture (not invented):
+trade_name: Бозутиниб
+inn: bosutinib
+dosage: 400 mg
+dosage_form: tablet

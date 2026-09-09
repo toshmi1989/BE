@@ -1,0 +1,610 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BE Protocol Study",
+  "type": "object",
+  "required": [
+    "study",
+    "test_product",
+    "reference_product",
+    "design",
+    "subjects",
+    "eligibility",
+    "analytes",
+    "pk",
+    "sampling",
+    "statistics",
+    "sources"
+  ],
+  "properties": {
+    "study": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "protocol_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "version_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "short_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "in_review",
+            "approved",
+            "archived"
+          ]
+        }
+      }
+    },
+    "test_product": {
+      "$ref": "#/$defs/product"
+    },
+    "reference_product": {
+      "$ref": "#/$defs/referenceProduct"
+    },
+    "design": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "CROSSOVER_2X2",
+            "REPLICATE_2X2X4",
+            "PARALLEL",
+            "ADAPTIVE",
+            "CUSTOM"
+          ]
+        },
+        "periods": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sequences": {
+          "type": "array"
+        },
+        "randomization": {
+          "type": "boolean"
+        },
+        "blinding": {
+          "type": "boolean"
+        },
+        "food_condition": {
+          "type": "string",
+          "enum": [
+            "FASTING",
+            "FED",
+            "FASTING_AND_FED",
+            "UNKNOWN"
+          ]
+        }
+      }
+    },
+    "subjects": {
+      "type": "object",
+      "properties": {
+        "target_evaluable_n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "planned_randomized_n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reserve_n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "planned_screened_n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "properties": {
+        "inclusion": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        },
+        "non_inclusion": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        },
+        "exclusion": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/criterion"
+          }
+        }
+      }
+    },
+    "analytes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/analyte"
+      }
+    },
+    "pk": {
+      "type": "object",
+      "properties": {
+        "primary_parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "secondary_parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "observation_duration_h": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "washout_days": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/samplingPoint"
+          }
+        },
+        "total_points_per_period": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "final_observation_h": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "manual_override": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "MISSING",
+            "PROPOSED",
+            "NEEDS_REVIEW",
+            "VERIFIED",
+            "CALCULATED"
+          ]
+        }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "properties": {
+        "alpha": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "power": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "be_lower": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "be_upper": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cv_studies": {
+          "type": "array"
+        },
+        "cv_pool": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "sample_size_calculation": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    }
+  },
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "SOURCE_DERIVED",
+            "CALCULATED",
+            "EXPERT_ENTERED",
+            "AI_PROPOSED",
+            "RULE_DERIVED"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "MISSING",
+            "PROPOSED",
+            "NEEDS_REVIEW",
+            "VERIFIED",
+            "REJECTED",
+            "CALCULATED",
+            "DERIVED"
+          ]
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "properties": {
+        "trade_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manufacturer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registration_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dosage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dosage_form": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "composition": {
+          "type": "array"
+        },
+        "storage_conditions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shelf_life": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "referenceProduct": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/product"
+        }
+      ],
+      "type": "object",
+      "properties": {
+        "registration_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "purchased_status": {
+          "type": "string",
+          "enum": [
+            "NOT_PURCHASED",
+            "PURCHASED",
+            "UNKNOWN"
+          ]
+        }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "required": [
+        "id",
+        "number",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "analyte": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "matrix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lloq": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "uloq": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tmax_min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tmax_max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "half_life_min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "half_life_max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pk_parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "samplingPoint": {
+      "type": "object",
+      "required": [
+        "time_h"
+      ],
+      "properties": {
+        "time_h": {
+          "type": "number",
+          "minimum": 0
+        },
+        "window_min": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "authors": {
+          "type": "array"
+        },
+        "year": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "page": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "section": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+﻿{
+  "phase": 21,
+  "executed_at": "2026-09-08T18:05:00+00:00",
+  "POSTGRES_EXECUTION_BLOCKED": true,
+  "postgres_status": "POSTGRES_EXECUTION_BLOCKED",
+  "docker_available": false,
+  "docker_compose_beta": "NOT_EXECUTED",
+  "reason": "Docker CLI not available on host; do not fabricate Postgres execution",
+  "AUTH_REQUIRED_intended": true,
+  "backup_status": "BLOCKED",
+  "restart_durability": "DEFERRED_TO_FILE_DB_PHASE20_EVIDENCE",
+  "phase20_file_db_evidence": "fixtures/field_study/phase20_ops_evidence.json",
+  "B-005_execution": {
+    "postgres_compose": "POSTGRES_EXECUTION_BLOCKED",
+    "status": "BLOCKED"
+  },
+  "fabricated": false
+}

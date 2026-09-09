@@ -1,0 +1,12 @@
+{
+  "fixture_id": "DESIGN-ONLY-UPDCB-01",
+  "description": "Minimal design-only writer input (binary DOCX preferred)",
+  "documents": [
+    {
+      "type": "DESIGN",
+      "filename": "design.docx",
+      "role": "INPUT",
+      "source_id": "SRC-DESIGN-ONLY"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "blocking": false,
+  "paragraph_count": 1249,
+  "table_count": 33,
+  "heading_count": 94,
+  "unresolved_found": [
+    "{{ELIGIBILITY.EXCLUSION}}",
+    "{{ELIGIBILITY.NON_INCLUSION}}",
+    "{{SPONSOR.NAME}}",
+    "{{STATISTICS.DROPOUT_PCT}}"
+  ],
+  "issues": [
+    {
+      "severity": "WARNING",
+      "code": "UNRESOLVED_PLACEHOLDER_DRAFT",
+      "message": "Draft mode allows unresolved: ['{{ELIGIBILITY.EXCLUSION}}', '{{ELIGIBILITY.NON_INCLUSION}}', '{{SPONSOR.NAME}}', '{{STATISTICS.DROPOUT_PCT}}']",
+      "details": {
+        "count": 4
+      }
+    }
+  ]
+}

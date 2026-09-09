@@ -1,0 +1,871 @@
+{
+  "analytes": [
+    {
+      "id": "fc1c152d-c815-49f3-841e-f7006e1662b0",
+      "name": "bosutinib",
+      "type": "PARENT"
+    }
+  ],
+  "blood_volume": {
+    "blood_volume_per_pk_sample_ml": 5.0,
+    "breakdown": {
+      "formula_pk": "33 × 2 × 5.0 × 1.0",
+      "other_volume_ml": 0.0,
+      "periods": 2,
+      "pk_volume_per_subject_ml": 330.0,
+      "points_per_period": 33,
+      "safety_volume_ml": 10.0,
+      "screening_volume_ml": 15.0,
+      "subjects": 28
+    },
+    "confidence": null,
+    "created_at": "2026-08-26 09:39:08",
+    "entity_version": 1,
+    "extraction_method": null,
+    "id": "01f4efa8-39ef-4157-81d3-d3f298b48657",
+    "notes": null,
+    "origin": "CALCULATED",
+    "other_blood_volume_ml": 0.0,
+    "other_total_ml": 0.0,
+    "page_ref": null,
+    "periods": 2,
+    "pk_volume_ml": 9240.0,
+    "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+    "provenance": {
+      "origin": "CALCULATED",
+      "source_ids": [],
+      "status": "CALCULATED"
+    },
+    "rationale": "pk_volume_per_subject = points_per_period × periods × volume_per_sample × reserve_factor; total = per_subject × subjects. Sample counts and blood volumes kept separate.",
+    "reserve_duplicate_factor": 1.0,
+    "safety_laboratory_volume_ml": 10.0,
+    "safety_total_ml": 280.0,
+    "sample_count": {
+      "periods": 2,
+      "planned_subjects": 28,
+      "points_per_period": 33,
+      "rationale": "points_per_period=33; periods=2; planned_subjects=28; withdrawn subjects not inferred.",
+      "total_pk_samples": 1848,
+      "total_subject_periods": 56
+    },
+    "sampling_points_per_period": 33,
+    "screening_total_ml": 420.0,
+    "screening_volume_ml": 15.0,
+    "section_ref": null,
+    "source_ids": [],
+    "status": "CALCULATED",
+    "subjects": 28,
+    "total_volume_ml": 9940.0,
+    "updated_at": "2026-08-26 09:39:08",
+    "verified_at": null,
+    "verified_by": null,
+    "volume_per_period_ml": 165.0,
+    "volume_per_subject_ml": 355.0
+  },
+  "client_input": null,
+  "design": {
+    "blinding": null,
+    "periods": 2,
+    "randomization": null,
+    "sequences": [
+      [
+        "T",
+        "R"
+      ],
+      [
+        "R",
+        "T"
+      ]
+    ],
+    "treatments": [
+      "T",
+      "R"
+    ],
+    "type": "CROSSOVER_2X2"
+  },
+  "eligibility": {
+    "exclusion": [],
+    "inclusion": [
+      {
+        "id": "60267903-af59-494e-8c04-1a40e1e35f37",
+        "number": 1,
+        "text": "Healthy volunteers"
+      }
+    ],
+    "non_inclusion": []
+  },
+  "eligibility_counts": {
+    "exclusion": 0,
+    "inclusion": 1,
+    "non_inclusion": 0
+  },
+  "evaluable_n": 32,
+  "evidence_summary": {
+    "count": 0
+  },
+  "food": {
+    "calories": null,
+    "composition": [],
+    "condition": "FED",
+    "confidence": null,
+    "created_at": "2026-08-26 09:39:08",
+    "decision_status": "PROPOSED",
+    "dose_after_meal_min": null,
+    "entity_version": 1,
+    "extraction_method": null,
+    "fat_percent": null,
+    "id": "e5ab93ca-48c4-4061-8dbc-caa1a8d6c9b9",
+    "meal_start_offset_min": null,
+    "meal_type": "HIGH_CALORIE",
+    "notes": null,
+    "origin": "SOURCE_DERIVED",
+    "page_ref": null,
+    "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+    "provenance": {
+      "origin": "SOURCE_DERIVED",
+      "source_ids": [
+        "8160462a-63b6-4de0-82ec-9feb44ac0573"
+      ],
+      "status": "PROPOSED"
+    },
+    "section_ref": null,
+    "source_ids": [
+      "8160462a-63b6-4de0-82ec-9feb44ac0573"
+    ],
+    "status": "PROPOSED",
+    "updated_at": "2026-08-26 09:39:08",
+    "verified_at": null,
+    "verified_by": null,
+    "water_volume_ml": null
+  },
+  "food_condition": "FED",
+  "observation_duration": 72.0,
+  "observation_unit": "h",
+  "organizations": null,
+  "periods": 2,
+  "pk_parameters": [
+    {
+      "analyte_id": "fc1c152d-c815-49f3-841e-f7006e1662b0",
+      "parameter_code": "Tmax",
+      "range_max": 6.0,
+      "range_min": 6.0
+    }
+  ],
+  "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+  "protocol_number": "BE-BOS-400-GOLDEN",
+  "randomized_n": 36,
+  "reference_assessment": null,
+  "reference_product": {
+    "dosage": "400 mg",
+    "dosage_form": null,
+    "inn": "bosutinib",
+    "manufacturer": null,
+    "manufacturer_country": null,
+    "purchased_status": "UNKNOWN",
+    "registration_number": null,
+    "trade_name": "Бозулиф"
+  },
+  "reserve_n": 0,
+  "sampling": {
+    "analyte_coverage": [
+      "bosutinib"
+    ],
+    "observation_duration": 72.0,
+    "observation_unit": "h",
+    "plan_id": "15b07381-d9b1-4b38-9050-fffe37c7c7eb",
+    "points": [
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "BASELINE",
+        "reason_display": "исходный уровень (до дозы)",
+        "sequence_order": null,
+        "time_h": 0.0
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "ABSORPTION",
+        "reason_display": "фаза абсорбции",
+        "sequence_order": null,
+        "time_h": 1.125
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "ABSORPTION",
+        "reason_display": "фаза абсорбции",
+        "sequence_order": null,
+        "time_h": 2.25
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "ABSORPTION",
+        "reason_display": "фаза абсорбции",
+        "sequence_order": null,
+        "time_h": 3.375
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TMAX_CAPTURE",
+        "reason_display": "захват Tmax",
+        "sequence_order": null,
+        "time_h": 4.5
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TMAX_CAPTURE",
+        "reason_display": "захват Tmax",
+        "sequence_order": null,
+        "time_h": 5.25
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TMAX_CAPTURE",
+        "reason_display": "захват Tmax",
+        "sequence_order": null,
+        "time_h": 6.0
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TMAX_CAPTURE",
+        "reason_display": "захват Tmax",
+        "sequence_order": null,
+        "time_h": 6.75
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TMAX_CAPTURE",
+        "reason_display": "захват Tmax",
+        "sequence_order": null,
+        "time_h": 7.5
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 8.0
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 8.75
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 9.875
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 11.562
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 14.094
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 17.891
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 23.586
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "DISTRIBUTION",
+        "reason_display": "фаза распределения",
+        "sequence_order": null,
+        "time_h": 32.129
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 43.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 45.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 47.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 49.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 51.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 53.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 55.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 57.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 59.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 61.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 63.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 65.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 67.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 69.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "TERMINAL_PHASE",
+        "reason_display": "терминальная фаза элиминации",
+        "sequence_order": null,
+        "time_h": 71.2
+      },
+      {
+        "analyte_ids": [],
+        "mandatory": null,
+        "reason": "FINAL",
+        "reason_display": "финальная точка наблюдения",
+        "sequence_order": null,
+        "time_h": 72.0
+      }
+    ],
+    "points_per_period": 33,
+    "rationale": "Combined Tmax coverage 6–6 h over 72 h observation; 33 points from density rule PK.SAMP.DENSITY.v1 (status=PROPOSED).",
+    "reasons_display": [
+      {
+        "reason_display": "исходный уровень (до дозы)",
+        "time_h": 0.0
+      },
+      {
+        "reason_display": "фаза абсорбции",
+        "time_h": 1.125
+      },
+      {
+        "reason_display": "фаза абсорбции",
+        "time_h": 2.25
+      },
+      {
+        "reason_display": "фаза абсорбции",
+        "time_h": 3.375
+      },
+      {
+        "reason_display": "захват Tmax",
+        "time_h": 4.5
+      },
+      {
+        "reason_display": "захват Tmax",
+        "time_h": 5.25
+      },
+      {
+        "reason_display": "захват Tmax",
+        "time_h": 6.0
+      },
+      {
+        "reason_display": "захват Tmax",
+        "time_h": 6.75
+      },
+      {
+        "reason_display": "захват Tmax",
+        "time_h": 7.5
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 8.0
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 8.75
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 9.875
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 11.562
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 14.094
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 17.891
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 23.586
+      },
+      {
+        "reason_display": "фаза распределения",
+        "time_h": 32.129
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 43.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 45.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 47.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 49.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 51.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 53.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 55.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 57.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 59.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 61.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 63.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 65.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 67.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 69.2
+      },
+      {
+        "reason_display": "терминальная фаза элиминации",
+        "time_h": 71.2
+      },
+      {
+        "reason_display": "финальная точка наблюдения",
+        "time_h": 72.0
+      }
+    ],
+    "status": "PROPOSED"
+  },
+  "sampling_points": [
+    {
+      "reason": "BASELINE",
+      "time_h": 0.0
+    },
+    {
+      "reason": "ABSORPTION",
+      "time_h": 1.125
+    },
+    {
+      "reason": "ABSORPTION",
+      "time_h": 2.25
+    },
+    {
+      "reason": "ABSORPTION",
+      "time_h": 3.375
+    },
+    {
+      "reason": "TMAX_CAPTURE",
+      "time_h": 4.5
+    },
+    {
+      "reason": "TMAX_CAPTURE",
+      "time_h": 5.25
+    },
+    {
+      "reason": "TMAX_CAPTURE",
+      "time_h": 6.0
+    },
+    {
+      "reason": "TMAX_CAPTURE",
+      "time_h": 6.75
+    },
+    {
+      "reason": "TMAX_CAPTURE",
+      "time_h": 7.5
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 8.0
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 8.75
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 9.875
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 11.562
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 14.094
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 17.891
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 23.586
+    },
+    {
+      "reason": "DISTRIBUTION",
+      "time_h": 32.129
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 43.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 45.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 47.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 49.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 51.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 53.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 55.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 57.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 59.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 61.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 63.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 65.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 67.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 69.2
+    },
+    {
+      "reason": "TERMINAL_PHASE",
+      "time_h": 71.2
+    },
+    {
+      "reason": "FINAL",
+      "time_h": 72.0
+    }
+  ],
+  "schema_version": "2",
+  "screened_n": 36,
+  "sequences": [
+    [
+      "T",
+      "R"
+    ],
+    [
+      "R",
+      "T"
+    ]
+  ],
+  "sources": [
+    {
+      "id": "8160462a-63b6-4de0-82ec-9feb44ac0573",
+      "title": "bosutinib_template_excerpts.docx",
+      "type": "SmPC"
+    }
+  ],
+  "sponsor": null,
+  "statistics": {
+    "config": {
+      "algorithm_version": null,
+      "alpha": 0.05,
+      "analysis_method": "ANOVA_TOST_90CI",
+      "be_lower": 0.8,
+      "be_upper": 1.25,
+      "confidence": null,
+      "created_at": "2026-08-26 09:39:09",
+      "defaults_source": "Configurable ABE defaults (SPEC §35) — attach verified regulatory source before Production",
+      "entity_version": 1,
+      "expected_ratio": 1.0,
+      "extraction_method": null,
+      "id": "427aba97-6921-4ea3-af34-e48877cde371",
+      "notes": null,
+      "origin": "RULE_DERIVED",
+      "page_ref": null,
+      "power": 0.8,
+      "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+      "provenance": {
+        "origin": "RULE_DERIVED",
+        "source_ids": [],
+        "status": "PROPOSED"
+      },
+      "rule_id": "STAT.DEFAULTS.ABE.v1",
+      "section_ref": null,
+      "software": null,
+      "source_ids": [],
+      "status": "PROPOSED",
+      "transformation": "LN",
+      "updated_at": "2026-08-26 09:39:09",
+      "verified_at": null,
+      "verified_by": null
+    },
+    "diverges_from_subject_plan": false,
+    "sample_size": {
+      "achieved_power": 0.815152032732,
+      "algorithm_version": "BE_TOST_2X2_NCT.v1",
+      "confidence": null,
+      "created_at": "2026-08-26 09:39:09",
+      "created_by": null,
+      "design_type": "CROSSOVER_2X2",
+      "entity_version": 1,
+      "evaluable_n": 32,
+      "extraction_method": null,
+      "formula": "σ²=ln(1+CV²); SE=σ√(2/n); df=n-2; power≈nct.sf(t_{1-α},df,ncp_L)+nct.sf(t_{1-α},df,ncp_U)-1; randomized_n = round_policy(evaluable_n / (1 - dropout_pct/100) * (1 + reserve_pct/100)); screened_n = round_policy(randomized_n / (1 - screen_failure_pct/100))",
+      "id": "4170d402-eccc-4582-9f91-fb5cd378bdbf",
+      "inputs_snapshot": {
+        "algorithm_version": "BE_TOST_2X2_NCT.v1",
+        "alpha": 0.05,
+        "analyte_id": "fc1c152d-c815-49f3-841e-f7006e1662b0",
+        "be_lower": 0.8,
+        "be_upper": 1.25,
+        "design_type": "CROSSOVER_2X2",
+        "dropout_pct": 10.0,
+        "expected_ratio": 1.0,
+        "parameter": "Cmax",
+        "power": 0.8,
+        "reserve_pct": 0.0,
+        "screen_failure_pct": 0.0,
+        "selected_cv_percent": 30.0,
+        "software": "scipy==1.18.1"
+      },
+      "method": "CROSSOVER_2X2_TOST_NCT",
+      "notes": null,
+      "origin": "CALCULATED",
+      "page_ref": null,
+      "parameter": "Cmax",
+      "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+      "provenance": {
+        "origin": "CALCULATED",
+        "source_ids": [],
+        "status": "PROPOSED"
+      },
+      "randomized_n": 36,
+      "reserve_formula": "σ²=ln(1+CV²); SE=σ√(2/n); df=n-2; power≈nct.sf(t_{1-α},df,ncp_L)+nct.sf(t_{1-α},df,ncp_U)-1; randomized_n = round_policy(evaluable_n / (1 - dropout_pct/100) * (1 + reserve_pct/100)); screened_n = round_policy(randomized_n / (1 - screen_failure_pct/100))",
+      "screened_n": 36,
+      "section_ref": null,
+      "selected_cv": 30.0,
+      "software_version": "scipy==1.18.1",
+      "source_ids": [],
+      "status": "PROPOSED",
+      "updated_at": "2026-08-26 09:39:09",
+      "verified_at": null,
+      "verified_by": null,
+      "warnings": []
+    },
+    "selected_cv": 30.0,
+    "subject_counts_source": "subject_plan"
+  },
+  "study_title": "Исследование биоэквивалентности бозутиниба 400 мг",
+  "subject_plan": {
+    "confidence": null,
+    "created_at": "2026-08-26 09:39:08",
+    "entity_version": 2,
+    "extraction_method": null,
+    "id": "388189ae-f631-4b54-9c83-cc4becdd65d7",
+    "notes": null,
+    "origin": "CALCULATED",
+    "page_ref": null,
+    "planned_randomized_n": 36,
+    "planned_screened_n": 36,
+    "project_id": "d9d61b4b-613e-4f10-b92f-67f6852984a5",
+    "provenance": {
+      "origin": "CALCULATED",
+      "source_ids": [],
+      "status": "PROPOSED"
+    },
+    "reserve_n": 0,
+    "section_ref": null,
+    "source_ids": [],
+    "status": "PROPOSED",
+    "target_evaluable_n": 32,
+    "updated_at": "2026-08-26 09:39:09",
+    "verified_at": null,
+    "verified_by": null
+  },
+  "test_product": {
+    "batch": null,
+    "composition": [],
+    "dosage": "400 mg",
+    "dosage_form": "tablet",
+    "inn": "bosutinib",
+    "manufacturer": null,
+    "manufacturer_country": null,
+    "registration_number": null,
+    "route": null,
+    "shelf_life": null,
+    "storage_conditions": null,
+    "trade_name": "Бозутиниб"
+  },
+  "validation_status": null,
+  "washout": {
+    "minimum": 7.395833333333,
+    "unit": "day",
+    "value": 14.0
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "pdf_render": false,
+  "reason": "No LibreOffice/soffice/docx2pdf available in environment",
+  "structural_proxy": {
+    "opens_in_python_docx": true,
+    "table_count": 33,
+    "heading_count": 94,
+    "unresolved_count": 43
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "registry_version": "0.30.0",
+  "phase": 25,
+  "policy": {
+    "synthetic_never_counts_as_real": true,
+    "minimum_real_target": 10,
+    "sanitization_required_before_load": true,
+    "golden_protocol_is_not_sot": true,
+    "no_estimated_roi": true,
+    "no_fabricated_packages": true,
+    "field_study_requires_sanitized": true
+  },
+  "population_status": {
+    "real_full": 1,
+    "real_partial": 1,
+    "intake_pending_slots": 8,
+    "meets_minimum_10": false,
+    "limitation": "Phase 25: portable handoff ready. Still 1 full REAL + 1 REAL_PARTIAL. Docker absent on prior host. No packages invented."
+  },
+  "packages": [
+    {
+      "case_id": "REAL-UPDCB-02-BE-2026",
+      "source_origin": "writer_golden_package",
+      "origin": "REAL",
+      "sanitized": true,
+      "sanitization_status": "yes",
+      "sanitization_notes": "No patient identifiers in fixture text dumps; sponsor/org names are study-party metadata already used in prior phases",
+      "available_documents": ["CHECKLIST", "SYNOPSIS", "SMPC", "GOLDEN_PROTOCOL"],
+      "missing_documents": [],
+      "writer_context": "Standard BE protocol preparation; known dose conflict checklist vs synopsis/SmPC",
+      "study_type": "2x2_crossover_fasting_like",
+      "patterns": ["conflicting_documents", "crossover", "complete_smpc", "legacy_golden_reference"],
+      "complexity_notes": "HIGH potential: CRITICAL dose conflict across checklist vs synopsis/SmPC; full document set",
+      "writer_assigned": null,
+      "date_received": "2026-prior-phases",
+      "fixture_path": "fixtures/study_inputs/updcb_02_be_2026",
+      "fixture_loader": "UPDCB_REAL",
+      "notes": "Mandatory golden regression; golden protocol = reference artifact not SoT"
+    },
+    {
+      "case_id": "REAL-DESIGN-ONLY-UPDCB",
+      "source_origin": "writer_incomplete_package",
+      "origin": "REAL_PARTIAL",
+      "sanitized": true,
+      "sanitization_status": "yes",
+      "sanitization_notes": "Design-only excerpt; incomplete package by design",
+      "available_documents": ["DESIGN"],
+      "missing_documents": ["CHECKLIST", "SYNOPSIS", "SMPC"],
+      "writer_context": "Incomplete intake reflecting real incomplete starting state",
+      "study_type": "incomplete_design",
+      "patterns": ["incomplete_package", "missing_smpc"],
+      "complexity_notes": "MEDIUM: incomplete sources force manual gap fill; not a full package for ≥10 gate",
+      "writer_assigned": null,
+      "date_received": "2026-prior-phases",
+      "fixture_path": "fixtures/study_inputs/design_only_updcb",
+      "fixture_loader": "DESIGN_ONLY",
+      "notes": "Counts toward real population as PARTIAL only"
+    }
+  ],
+  "intake_slots": [
+    {"slot_id": "REAL-INTAKE-03", "status": "EMPTY", "required_patterns": ["fed"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-04", "status": "EMPTY", "required_patterns": ["fasting_and_fed"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-05", "status": "EMPTY", "required_patterns": ["different_api"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-06", "status": "EMPTY", "required_patterns": ["missing_cvintra"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-07", "status": "EMPTY", "required_patterns": ["long_half_life_or_parallel"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-08", "status": "EMPTY", "required_patterns": ["replicate_or_high_var"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-09", "status": "EMPTY", "required_patterns": ["legacy_protocol_present"], "writer_assigned": null, "date_received": null},
+    {"slot_id": "REAL-INTAKE-10", "status": "EMPTY", "required_patterns": ["incomplete_smpc"], "writer_assigned": null, "date_received": null}
+  ],
+  "diversity_coverage": {
+    "conflicting_documents": true,
+    "incomplete_package": true,
+    "complete_smpc": true,
+    "different_apis": false,
+    "fed": false,
+    "fasting_and_fed": false,
+    "replicate": false,
+    "parallel_long_hl": false,
+    "missing_cvintra_explicit": false,
+    "legacy_protocol_as_input": false,
+    "note": "Diversity incomplete until intake slots filled with distinct REAL packages"
+  }
+}

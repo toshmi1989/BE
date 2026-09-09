@@ -1,0 +1,10 @@
+{
+  "status": "BLOCKED",
+  "blocking_reasons": [
+    "missing sponsor",
+    "ProtocolDraft is BLOCKED",
+    "unresolved fields present (59)",
+    "critical unresolved: ['{{ANALYTICAL_LAB.DETAILS}}', '{{CLINICAL_CENTERS.DETAILS}}', '{{EVIDENCE.CLINICAL_SUMMARY}}', '{{EVIDENCE.PHARMACOLOGY}}', '{{EVIDENCE.RISK_BENEFIT}}', '{{FINANCING.DETAILS}}', '{{INSURANCE.DETAILS}}', '{{INVESTIGATORS.DETAILS}}', '{{INVESTIGATOR_AGREEMENT.DETAILS}}', '{{KEY_ORGS.DETAILS}}']"
+  ],
+  "note": "protocol-final.docx not written — correct gate without sponsor"
+}

@@ -1,0 +1,79 @@
+{
+  "phase": 24,
+  "executed_at": "2026-09-09T02:57:38.185801+00:00",
+  "fabricated": false,
+  "beta_gate": "BETA_NOT_READY",
+  "classification": "NOT_READY",
+  "entry_ready": false,
+  "gate_overall": "BLOCK",
+  "blockers": [
+    "REAL_FULL_PACKAGES=1 (need >=10 or documented override)",
+    "WRITERS=0",
+    "PAIRED_SESSIONS=0 (need >=5)",
+    "POSTGRES_EXECUTED=false",
+    "AUTH_REQUIRED=false",
+    "STRONG_AUTH_SECRET=false",
+    "BACKUP_RESTORE_EXECUTED=false (file DB does not count)",
+    "RESTART_DURABILITY_EXECUTED=false (Postgres-backed required)",
+    "Docker CLI not available",
+    "AUTH_REQUIRED is not true"
+  ],
+  "real_full_packages": 1,
+  "real_partial_packages": 1,
+  "writers": 0,
+  "paired_sessions_complete": 0,
+  "intake_display": "1 / 10 REAL PACKAGES",
+  "diversity": [
+    {
+      "case_id": "REAL-UPDCB-02-BE-2026",
+      "origin": "REAL",
+      "study_type": "2x2_crossover_fasting_like",
+      "design_pattern": [
+        "conflicting_documents",
+        "crossover",
+        "complete_smpc",
+        "legacy_golden_reference"
+      ],
+      "food_condition": "fasting_like",
+      "document_completeness": {
+        "available": [
+          "CHECKLIST",
+          "SYNOPSIS",
+          "SMPC",
+          "GOLDEN_PROTOCOL"
+        ],
+        "missing": []
+      },
+      "special_complexity": "HIGH potential: CRITICAL dose conflict across checklist vs synopsis/SmPC; full document set",
+      "sanitized": true
+    },
+    {
+      "case_id": "REAL-DESIGN-ONLY-UPDCB",
+      "origin": "REAL_PARTIAL",
+      "study_type": "incomplete_design",
+      "design_pattern": [
+        "incomplete_package",
+        "missing_smpc"
+      ],
+      "food_condition": "unspecified",
+      "document_completeness": {
+        "available": [
+          "DESIGN"
+        ],
+        "missing": [
+          "CHECKLIST",
+          "SYNOPSIS",
+          "SMPC"
+        ]
+      },
+      "special_complexity": "MEDIUM: incomplete sources force manual gap fill; not a full package for \u226510 gate",
+      "sanitized": true
+    }
+  ],
+  "postgres_evidence_path": "C:/Projects/BE/fixtures/field_study/phase24_postgres_evidence.json",
+  "advanced_to_BETA_READY": false,
+  "advanced_to_CONTROLLED_BETA_RUNNING": false,
+  "reason_not_advanced": "entry criteria not satisfied \u2014 refusing to mark BETA_READY",
+  "roi_published": false,
+  "secrets_exposed": false
+}

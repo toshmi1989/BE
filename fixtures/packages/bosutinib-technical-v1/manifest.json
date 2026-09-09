@@ -1,0 +1,63 @@
+{
+  "package_id": "bosutinib-technical-v1",
+  "classification": "TECHNICAL_FIXTURE",
+  "medical_validation": false,
+  "ingestion_version": "1",
+  "extraction_version": "1",
+  "note": "TECHNICAL_FIXTURE_ONLY — pipeline validation, not medical validation.",
+  "design_document": {
+    "source_id": "SRC-DESIGN-01",
+    "filename": "design_notes.txt",
+    "path": "sources/design_notes.txt",
+    "type": "design",
+    "origin": "golden_template_excerpts",
+    "completeness": "PARTIAL"
+  },
+  "test_product_sources": [
+    {
+      "source_id": "SRC-TEST-01",
+      "filename": "test_product.txt",
+      "path": "sources/test_product.txt",
+      "type": "test_product",
+      "origin": "golden_snapshot_fields",
+      "completeness": "PARTIAL"
+    }
+  ],
+  "reference_product_sources": [
+    {
+      "source_id": "SRC-REF-01",
+      "filename": "reference_product.txt",
+      "path": "sources/reference_product.txt",
+      "type": "reference",
+      "origin": "golden_snapshot_fields",
+      "completeness": "PARTIAL"
+    }
+  ],
+  "checklist": {
+    "source_id": "SRC-CHECKLIST-01",
+    "filename": "checklist.json",
+    "path": "sources/checklist.json",
+    "type": "checklist",
+    "origin": "technical_surrogate",
+    "completeness": "PARTIAL"
+  },
+  "cv_sources": [
+    {
+      "source_id": "SRC-CV-01",
+      "filename": "cv_evidence.json",
+      "path": "sources/cv_evidence.json",
+      "type": "cv",
+      "origin": "golden_cv_path",
+      "completeness": "PARTIAL"
+    }
+  ],
+  "previous_protocol": {
+    "source_id": "SRC-PREV-01",
+    "filename": "previous_protocol_identity.json",
+    "path": "sources/previous_protocol_identity.json",
+    "type": "previous_protocol",
+    "origin": "synthetic_legacy_identity",
+    "completeness": "PARTIAL"
+  },
+  "additional_sources": []
+}

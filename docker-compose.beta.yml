@@ -1,0 +1,60 @@
+# Beta / staging stack — Postgres + auth required (do NOT use SQLite in-memory)
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-be_beta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-be_beta}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - be_beta_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-be_beta} -d ${POSTGRES_DB:-be_beta}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-be_beta}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-be_beta}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      EXTERNAL_AI_ENABLED: false
+      AUTH_REQUIRED: "true"
+      AUTH_SECRET: ${AUTH_SECRET:?Set a strong AUTH_SECRET}
+      DOCUMENT_STORAGE_ROOT: /data/documents
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./schemas:/schemas:ro
+      - ./templates:/templates:ro
+      - ./fixtures:/fixtures:ro
+      - be_beta_docs:/data/documents
+      - be_beta_artifacts:/data/artifacts
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  be_beta_pg_data:
+  be_beta_docs:
+  be_beta_artifacts:

@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-be_protocol}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-be_protocol_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-be_protocol}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - be_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-be_protocol} -d ${POSTGRES_DB:-be_protocol}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-be_protocol}:${POSTGRES_PASSWORD:-be_protocol_dev}@db:5432/${POSTGRES_DB:-be_protocol}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      EXTERNAL_AI_ENABLED: ${EXTERNAL_AI_ENABLED:-false}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-in-production}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./schemas:/schemas:ro
+      - ./templates:/templates:ro
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  be_pg_data:

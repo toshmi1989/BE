@@ -1,0 +1,215 @@
+{
+  "registry_version": "0.24.0",
+  "notes": [
+    "Golden protocol is a reference artifact, NOT source of truth.",
+    "Canonical facts + evidence + expert decisions are the truth model.",
+    "Cases without real writer packages are SYNTHETIC and clearly labelled.",
+    "Do not claim product ROI without recorded writer time observations."
+  ],
+  "cases": [
+    {
+      "case_id": "CASE-A-2X2-FASTING",
+      "category": "A",
+      "origin": "SYNTHETIC",
+      "description": "Standard 2×2 crossover, fasting",
+      "input_documents": ["CHECKLIST", "SYNOPSIS"],
+      "expected_document_types": ["CHECKLIST", "SYNOPSIS"],
+      "expected_key_facts": {
+        "design.crossover": true,
+        "design.periods": 2,
+        "treatment.fasting": true
+      },
+      "expected_conflicts": [],
+      "expected_missing_data": ["cvintra", "half_life"],
+      "expected_research_questions": ["missing CVintra", "missing half-life"],
+      "expected_decisions": ["PRIMARY_BE"],
+      "expected_protocol_properties": {"design": "2x2_crossover", "food": "fasting"},
+      "expected_manual_actions": ["approve PRIMARY_BE", "approve sample size"]
+    },
+    {
+      "case_id": "CASE-B-2X2-FED",
+      "category": "B",
+      "origin": "SYNTHETIC",
+      "description": "Standard 2×2 crossover, fed",
+      "input_documents": ["CHECKLIST", "SYNOPSIS"],
+      "expected_document_types": ["CHECKLIST", "SYNOPSIS"],
+      "expected_key_facts": {
+        "design.crossover": true,
+        "treatment.fed": true
+      },
+      "expected_conflicts": [],
+      "expected_missing_data": ["cvintra"],
+      "expected_research_questions": ["missing CVintra"],
+      "expected_decisions": ["PRIMARY_BE"],
+      "expected_protocol_properties": {"food": "fed"},
+      "expected_manual_actions": ["approve food condition"]
+    },
+    {
+      "case_id": "CASE-C-FASTING-FED",
+      "category": "C",
+      "origin": "SYNTHETIC",
+      "description": "Fasting + fed arms",
+      "input_documents": ["SYNOPSIS", "DESIGN"],
+      "expected_document_types": ["SYNOPSIS", "DESIGN"],
+      "expected_key_facts": {"treatment.fasting": true, "treatment.fed": true},
+      "expected_conflicts": [],
+      "expected_missing_data": ["sample_size_evidence"],
+      "expected_research_questions": ["sample size evidence"],
+      "expected_decisions": ["FOOD_CONDITION", "PRIMARY_BE"],
+      "expected_protocol_properties": {"food": "fasting_and_fed"},
+      "expected_manual_actions": ["clarify dual food conditions"]
+    },
+    {
+      "case_id": "CASE-D-HIGH-VAR-REPLICATE",
+      "category": "D",
+      "origin": "SYNTHETIC",
+      "description": "High variability / replicate design",
+      "input_documents": ["SYNOPSIS"],
+      "expected_document_types": ["SYNOPSIS"],
+      "expected_key_facts": {"design.conditions": "replicate"},
+      "expected_conflicts": [],
+      "expected_missing_data": ["cvintra"],
+      "expected_research_questions": ["high variability justification"],
+      "expected_decisions": ["DESIGN", "SAMPLE_SIZE"],
+      "expected_protocol_properties": {"design": "replicate"},
+      "expected_manual_actions": ["confirm replicate design"]
+    },
+    {
+      "case_id": "CASE-E-LONG-HL-PARALLEL",
+      "category": "E",
+      "origin": "SYNTHETIC",
+      "description": "Long half-life / parallel design",
+      "input_documents": ["SYNOPSIS", "SMPC"],
+      "expected_document_types": ["SYNOPSIS", "SMPC"],
+      "expected_key_facts": {"design.conditions": "parallel", "washout.rationale": "long half-life"},
+      "expected_conflicts": [],
+      "expected_missing_data": [],
+      "expected_research_questions": ["washout justification"],
+      "expected_decisions": ["DESIGN"],
+      "expected_protocol_properties": {"design": "parallel"},
+      "expected_manual_actions": ["approve parallel design"]
+    },
+    {
+      "case_id": "CASE-F-MISSING-CVINTRA",
+      "category": "F",
+      "origin": "SYNTHETIC",
+      "description": "Missing CVintra — sample size blocked until evidence",
+      "input_documents": ["SYNOPSIS"],
+      "expected_document_types": ["SYNOPSIS"],
+      "expected_key_facts": {"design.crossover": true},
+      "expected_conflicts": [],
+      "expected_missing_data": ["cvintra"],
+      "expected_research_questions": ["missing CVintra"],
+      "expected_decisions": ["SAMPLE_SIZE"],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["research CVintra", "approve sample size"]
+    },
+    {
+      "case_id": "CASE-G-MISSING-HALFLIFE",
+      "category": "G",
+      "origin": "SYNTHETIC",
+      "description": "Missing half-life",
+      "input_documents": ["CHECKLIST"],
+      "expected_document_types": ["CHECKLIST"],
+      "expected_key_facts": {},
+      "expected_conflicts": [],
+      "expected_missing_data": ["half_life"],
+      "expected_research_questions": ["missing half-life"],
+      "expected_decisions": ["WASHOUT"],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["research half-life"]
+    },
+    {
+      "case_id": "CASE-H-MISSING-TMAX",
+      "category": "H",
+      "origin": "SYNTHETIC",
+      "description": "Missing Tmax",
+      "input_documents": ["SYNOPSIS"],
+      "expected_document_types": ["SYNOPSIS"],
+      "expected_key_facts": {},
+      "expected_conflicts": [],
+      "expected_missing_data": ["tmax"],
+      "expected_research_questions": ["missing Tmax"],
+      "expected_decisions": ["SAMPLING"],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["research Tmax"]
+    },
+    {
+      "case_id": "CASE-I-CONFLICTING-DOCS",
+      "category": "I",
+      "origin": "REAL",
+      "description": "UPDCB real package — reference dose 15 vs 30 mg conflict",
+      "fixture_loader": "UPDCB_REAL",
+      "input_documents": ["CHECKLIST", "SYNOPSIS", "SMPC"],
+      "expected_document_types": ["CHECKLIST", "SYNOPSIS", "SMPC"],
+      "expected_key_facts": {
+        "study.protocol_number": "UPDCB-02-BE-2026",
+        "test_product.dose": "15 mg"
+      },
+      "expected_conflicts": [
+        {
+          "field_path": "reference_product.dose",
+          "values": ["30 mg", "15 mg"],
+          "auto_resolve": false
+        }
+      ],
+      "expected_missing_data": [],
+      "expected_research_questions": [],
+      "expected_decisions": ["REFERENCE_DOSE", "PRIMARY_BE"],
+      "expected_protocol_properties": {"study_id": "UPDCB-02-BE-2026"},
+      "expected_manual_actions": ["resolve dose conflict via expert decision"]
+    },
+    {
+      "case_id": "CASE-J-PARTIAL-SMPC",
+      "category": "J",
+      "origin": "REAL_PARTIAL",
+      "description": "Incomplete package — design-only / missing SmPC path",
+      "fixture_loader": "DESIGN_ONLY",
+      "input_documents": ["DESIGN"],
+      "expected_document_types": ["DESIGN"],
+      "expected_key_facts": {},
+      "expected_conflicts": [],
+      "expected_missing_data": ["smpc", "checklist", "cvintra", "half_life"],
+      "expected_research_questions": ["missing reference information"],
+      "expected_decisions": [],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["upload missing documents"]
+    },
+    {
+      "case_id": "CASE-K-DOC-QUALITY",
+      "category": "K",
+      "origin": "SYNTHETIC",
+      "description": "Different document quality / messy formatting",
+      "input_documents": ["CHECKLIST", "SYNOPSIS"],
+      "expected_document_types": ["CHECKLIST", "SYNOPSIS"],
+      "expected_key_facts": {"design.crossover": true},
+      "expected_conflicts": [],
+      "expected_missing_data": ["sampling.schedule"],
+      "expected_research_questions": [],
+      "expected_decisions": [],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["review low-confidence extractions"]
+    },
+    {
+      "case_id": "CASE-L-STALE-LEGACY",
+      "category": "L",
+      "origin": "SYNTHETIC",
+      "description": "Legacy previous protocol with stale template values",
+      "input_documents": ["PROTOCOL", "SYNOPSIS"],
+      "expected_document_types": ["PROTOCOL", "SYNOPSIS"],
+      "expected_key_facts": {},
+      "expected_conflicts": [
+        {
+          "field_path": "subjects.randomized_n",
+          "values": ["48", "56"],
+          "note": "stale protocol vs synopsis"
+        }
+      ],
+      "expected_missing_data": [],
+      "expected_research_questions": [],
+      "expected_decisions": ["SUBJECTS"],
+      "expected_protocol_properties": {},
+      "expected_manual_actions": ["reject stale protocol values as SoT"]
+    }
+  ]
+}
