@@ -551,7 +551,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
                           onNotice={onNotice}
                           runAction={runAction}
                           onDone={async () => {
-                            await onRefresh(["decisions", "progress", "summary"]);
+                            await onRefresh(["decisions", "progress", "core"]);
                           }}
                         />
                       ) : null}
