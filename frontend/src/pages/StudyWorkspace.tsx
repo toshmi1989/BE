@@ -29,6 +29,7 @@ import {
   listWorkspaceArtifacts,
   downloadWorkspaceArtifactUrl,
   listWorkspaceSnapshots,
+  formatApiError,
 } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { DecisionForm } from "../components/DecisionForm";
@@ -213,7 +214,7 @@ export function StudyWorkspace() {
     setOps((prev) => setOpBusy(prev, key, true));
     return run()
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = formatApiError(err);
         setOps((prev) => setOpError(prev, key, msg));
         // Unhandled transport/parser failures also surface globally once
         if (/ContractError|Failed to fetch|NetworkError|Unexpected token|JSON/i.test(msg)) {
@@ -370,7 +371,7 @@ export function StudyWorkspace() {
       await refreshSlices(ALL_SLICES, key);
       goTab("overview");
     } catch (err: unknown) {
-      setGlobalError(err instanceof Error ? err.message : "Не удалось открыть исследование");
+      setGlobalError(formatApiError(err, "Не удалось открыть исследование"));
     }
   }
 
@@ -402,7 +403,7 @@ export function StudyWorkspace() {
     try {
       setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
     } catch (err: unknown) {
-      setGlobalError(err instanceof Error ? err.message : "Не удалось загрузить детали поля");
+      setGlobalError(formatApiError(err, "Не удалось загрузить детали поля"));
     }
   }
 
@@ -1474,7 +1475,7 @@ export function StudyWorkspace() {
                         await refreshSlices(["core", "history", "progress"]);
                         if (fieldDrawer === editDraft.field) await openFieldDrawer(editDraft.field);
                       } catch (err: unknown) {
-                        setGlobalError(err instanceof Error ? err.message : "Edit failed");
+                        setGlobalError(formatApiError(err, "Edit failed"));
                       }
                     }}
                   >
@@ -1842,7 +1843,7 @@ export function StudyWorkspace() {
                           try {
                             setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
                           } catch (err: unknown) {
-                            setGlobalError(err instanceof Error ? err.message : "Field detail failed");
+                            setGlobalError(formatApiError(err, "Field detail failed"));
                           }
                         }}
                       >

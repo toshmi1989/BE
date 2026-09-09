@@ -14,10 +14,62 @@ export type DecisionFormValues = {
   evidenceRefs?: string;
 };
 
+/** Backend may send plain strings or `{ code, label }` / `{ value, label }`. */
+export type DecisionOptionInput =
+  | string
+  | number
+  | boolean
+  | {
+      code?: unknown;
+      label?: unknown;
+      value?: unknown;
+      option?: unknown;
+      name?: unknown;
+    }
+  | null
+  | undefined;
+
+export type DecisionOptionChoice = { value: string; label: string };
+
+export function normalizeDecisionOption(raw: DecisionOptionInput): DecisionOptionChoice | null {
+  if (raw == null) return null;
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    const value = String(raw).trim();
+    return value ? { value, label: value } : null;
+  }
+  if (typeof raw !== "object") return null;
+  const code =
+    raw.code ?? raw.value ?? raw.option ?? raw.name ?? null;
+  const label = raw.label ?? code;
+  if (code != null && typeof code === "object") {
+    // Nested object — refuse to stringify as [object Object]
+    return null;
+  }
+  if (label != null && typeof label === "object") {
+    const value = code != null ? String(code).trim() : "";
+    return value ? { value, label: value } : null;
+  }
+  const value = code != null ? String(code).trim() : label != null ? String(label).trim() : "";
+  if (!value) return null;
+  return { value, label: label != null ? String(label) : value };
+}
+
+export function normalizeDecisionOptions(options: DecisionOptionInput[] | undefined): DecisionOptionChoice[] {
+  const out: DecisionOptionChoice[] = [];
+  const seen = new Set<string>();
+  for (const raw of options || []) {
+    const n = normalizeDecisionOption(raw);
+    if (!n || seen.has(n.value)) continue;
+    seen.add(n.value);
+    out.push(n);
+  }
+  return out;
+}
+
 export type DecisionFormProps = {
   action: DecisionFormAction;
   title?: string;
-  options?: string[];
+  options?: DecisionOptionInput[];
   defaultOption?: string;
   /** When set, form hydrates from this draft (retained across open/close). */
   draft?: Partial<DecisionFormValues> | null;
@@ -125,6 +177,7 @@ export function DecisionForm(props: DecisionFormProps) {
   const showOption = action === "approve" || action === "modify";
   const showEvidenceReason = action === "request-evidence";
   const displayError = localError || error || null;
+  const optionChoices = normalizeDecisionOptions(options);
 
   return (
     <form className="decision-form inline-edit" onSubmit={(e) => void handleSubmit(e)} noValidate>
@@ -132,28 +185,28 @@ export function DecisionForm(props: DecisionFormProps) {
       {showOption && (
         <fieldset className="form-grid">
           <legend className="muted small">Выбранное значение</legend>
-          {options.length > 0 ? (
+          {optionChoices.length > 0 ? (
             <div role="radiogroup" aria-labelledby={`${formId}-opt-label`}>
               <span id={`${formId}-opt-label`} className="muted small">
                 Option
               </span>
-              {options.map((opt) => (
-                <label key={opt} className="radio-row">
+              {optionChoices.map((opt) => (
+                <label key={opt.value} className="radio-row">
                   <input
                     type="radio"
                     name={`${formId}-option`}
-                    value={opt}
-                    checked={values.selectedOption === opt}
+                    value={opt.value}
+                    checked={values.selectedOption === opt.value}
                     disabled={busy}
-                    onChange={() => update({ selectedOption: opt })}
+                    onChange={() => update({ selectedOption: opt.value })}
                   />
-                  {opt}
+                  {opt.label === opt.value ? opt.label : `${opt.label} (${opt.value})`}
                 </label>
               ))}
             </div>
           ) : null}
           <label>
-            {options.length ? "Или введите другое значение" : "Selected option"}
+            {optionChoices.length ? "Или введите другое значение" : "Selected option"}
             <input
               value={values.selectedOption || ""}
               disabled={busy}

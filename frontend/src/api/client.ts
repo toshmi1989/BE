@@ -102,30 +102,65 @@ export class ApiError extends Error {
   readonly status: number;
   readonly body: string;
   readonly code: string | null;
+  /** Human-readable detail when the API returns JSON `detail` / `message`. */
+  readonly userMessage: string;
 
   constructor(status: number, body: string, code: string | null = null) {
-    super(`HTTP ${status}: ${body}`);
+    const userMessage = extractErrorMessage(body) || body || `HTTP ${status}`;
+    super(userMessage);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
     this.code = code;
+    this.userMessage = userMessage;
   }
+}
+
+function extractErrorMessage(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown; code?: unknown; message?: unknown };
+    if (typeof parsed.message === "string" && parsed.message.trim()) return parsed.message;
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) return parsed.detail;
+    if (parsed.detail && typeof parsed.detail === "object" && !Array.isArray(parsed.detail)) {
+      const d = parsed.detail as { code?: unknown; message?: unknown; detail?: unknown };
+      if (typeof d.message === "string" && d.message.trim()) return d.message;
+      if (typeof d.detail === "string" && d.detail.trim()) return d.detail;
+    }
+    if (Array.isArray(parsed.detail) && parsed.detail.length) {
+      const parts = parsed.detail.map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg: unknown }).msg);
+        }
+        return JSON.stringify(item);
+      });
+      return parts.join("; ");
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
 }
 
 function extractErrorCode(body: string): string | null {
   try {
     const parsed = JSON.parse(body) as { detail?: unknown; code?: unknown };
     if (typeof parsed.code === "string") return parsed.code;
-    if (typeof parsed.detail === "string") return parsed.detail;
     if (parsed.detail && typeof parsed.detail === "object" && !Array.isArray(parsed.detail)) {
-      const d = parsed.detail as { code?: unknown; message?: unknown };
+      const d = parsed.detail as { code?: unknown };
       if (typeof d.code === "string") return d.code;
-      if (typeof d.message === "string") return d.message;
     }
   } catch {
     /* not JSON */
   }
   return null;
+}
+
+/** Prefer ApiError.userMessage; fall back to Error.message. */
+export function formatApiError(err: unknown, fallback = "Request failed"): string {
+  if (err instanceof ApiError) return err.userMessage;
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return fallback;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

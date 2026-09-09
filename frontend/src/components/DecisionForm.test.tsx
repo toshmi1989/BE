@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DecisionForm, validateDecisionForm, type DecisionFormValues } from "./DecisionForm";
+import {
+  DecisionForm,
+  normalizeDecisionOptions,
+  validateDecisionForm,
+  type DecisionFormValues,
+} from "./DecisionForm";
 import { collectWorkflowStepErrors, formatWorkflowStepErrors } from "../workspace/workflowSteps";
+
+describe("normalizeDecisionOptions", () => {
+  it("uses code/label and never renders [object Object]", () => {
+    const opts = normalizeDecisionOptions([
+      "STANDARD_2X2_CROSSOVER",
+      { code: "REPLICATE_DESIGN", label: "Replicate design" },
+      { value: "PARALLEL", label: "Parallel" },
+      { nested: true } as never,
+    ]);
+    expect(opts.map((o) => o.value)).toEqual([
+      "STANDARD_2X2_CROSSOVER",
+      "REPLICATE_DESIGN",
+      "PARALLEL",
+    ]);
+    expect(opts.every((o) => !o.label.includes("[object Object]"))).toBe(true);
+  });
+});
 
 describe("validateDecisionForm", () => {
   it("requires rationale for approve/reject/modify/review", () => {
@@ -79,6 +101,24 @@ describe("DecisionForm draft retention", () => {
     fireEvent.submit(screen.getByRole("button", { name: /Утвердить/i }).closest("form")!);
     expect(submitted).toHaveLength(0);
     expect(screen.getByRole("alert").textContent).toMatch(/обязательн/i);
+  });
+
+  it("renders code/label option objects without [object Object]", () => {
+    render(
+      <DecisionForm
+        action="approve"
+        options={[
+          { code: "STANDARD_2X2_CROSSOVER", label: "2×2 crossover" },
+          { code: "REPLICATE_DESIGN", label: "Replicate" },
+        ]}
+        defaultOption="STANDARD_2X2_CROSSOVER"
+        onSubmit={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(screen.queryByText(/\[object Object\]/i)).toBeNull();
+    expect(screen.getByText(/2×2 crossover/i)).toBeTruthy();
+    expect(screen.getByText(/Replicate/i)).toBeTruthy();
   });
 });
 

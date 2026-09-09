@@ -61,7 +61,24 @@ describe("client auth token + ApiError", () => {
     const err = await fetchHealth().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as InstanceType<typeof ApiError>).status).toBe(403);
+    expect((err as InstanceType<typeof ApiError>).userMessage).toBe("Forbidden");
     expect(getAuthToken()).toBe("keep-me");
     expect(sessionStorage.getItem("be_auth_token")).toBe("keep-me");
+  });
+
+  it("exposes human detail without raw HTTP JSON dump", async () => {
+    const { ApiError, formatApiError, fetchHealth } = await import("./client");
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: "Cannot approve blocked decision with open dependency blockers" }),
+        { status: 422 },
+      ),
+    );
+    const err = await fetchHealth().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(formatApiError(err)).toBe(
+      "Cannot approve blocked decision with open dependency blockers",
+    );
+    expect(formatApiError(err)).not.toMatch(/^HTTP 422:/);
   });
 });

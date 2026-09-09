@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   approveStudyDecision,
+  formatApiError,
   getDecisionApplicability,
   getDecisionBlockers,
   getDecisionDependencies,
@@ -12,8 +13,11 @@ import {
 } from "../api/client";
 import {
   DecisionForm,
+  normalizeDecisionOption,
+  normalizeDecisionOptions,
   type DecisionFormAction,
   type DecisionFormValues,
+  type DecisionOptionInput,
 } from "./DecisionForm";
 import { humanLabel } from "../writerLabels";
 import { slicesFromAffects, type RefreshSlice } from "../workspace/refreshSlices";
@@ -29,6 +33,33 @@ function statusClass(code: string | undefined): string {
     return "status-yellow";
   }
   return "status-gray";
+}
+
+function decisionHasOpenBlockers(d: Record<string, unknown> | null | undefined): boolean {
+  if (!d) return false;
+  if (String(d.status || "").toUpperCase() === "BLOCKED") return true;
+  const reasons = d.blocking_reasons;
+  if (Array.isArray(reasons) && reasons.length > 0) return true;
+  const conflicts = d.blocking_conflicts;
+  if (Array.isArray(conflicts) && conflicts.length > 0) return true;
+  return false;
+}
+
+function formatBlockerHint(d: Record<string, unknown>): string {
+  const reasons = Array.isArray(d.blocking_reasons) ? d.blocking_reasons : [];
+  const labels = reasons
+    .map((r) => {
+      if (typeof r === "string") return r;
+      if (r && typeof r === "object") {
+        const o = r as Record<string, unknown>;
+        return String(o.message || o.code || o.reason || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+  const suffix = labels.length ? `: ${labels.join("; ")}` : "";
+  return `Нельзя утвердить: есть открытые dependency blockers${suffix}. Сначала закройте blockers / upstream decisions.`;
 }
 
 function EmptyState(props: {
@@ -155,6 +186,13 @@ export function DecisionPanel(props: DecisionPanelProps) {
       onNotice("Недостаточно прав (approve_decisions)");
       return;
     }
+    if (target.kind === "decision" && (target.action === "approve" || target.action === "modify")) {
+      const d = decisions.find((x) => String(x.id || x.decision_id) === target.id);
+      if (d && decisionHasOpenBlockers(d)) {
+        onTransportError(formatBlockerHint(d));
+        return;
+      }
+    }
     setFormTarget(target);
   }
 
@@ -234,7 +272,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
         setFormTarget(null);
         await onRefresh(slices);
       } catch (err: unknown) {
-        onTransportError(err instanceof Error ? err.message : "Decision action failed");
+        onTransportError(formatApiError(err, "Decision action failed"));
       }
     });
   }
@@ -248,7 +286,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
       ? decisions.find((d) => String(d.id || d.decision_id) === formTarget.id)
       : null;
 
-  const formOptions: string[] = [];
+  const formOptions: DecisionOptionInput[] = [];
   let defaultOption = "";
   if (formConflict) {
     if (formConflict.value_a != null) formOptions.push(String(formConflict.value_a));
@@ -261,21 +299,22 @@ export function DecisionPanel(props: DecisionPanelProps) {
         : String(formConflict.value_a || "");
   } else if (formDecision) {
     const rec = formDecision.recommendation as Record<string, unknown> | undefined;
-    const opt = rec?.option != null ? String(rec.option) : "";
-    if (opt) formOptions.push(opt);
-    const opts = (formDecision.options as unknown[]) || [];
-    for (const o of opts) {
-      const v = typeof o === "object" && o && "value" in (o as object)
-        ? String((o as { value: unknown }).value)
-        : String(o);
-      if (v && !formOptions.includes(v)) formOptions.push(v);
+    const recOpt = normalizeDecisionOption(
+      (rec?.option ?? rec?.code ?? rec?.value) as DecisionOptionInput,
+    );
+    if (recOpt) formOptions.push(recOpt);
+    for (const o of normalizeDecisionOptions((formDecision.options as DecisionOptionInput[]) || [])) {
+      if (!formOptions.some((x) => normalizeDecisionOption(x)?.value === o.value)) {
+        formOptions.push(o);
+      }
     }
-    defaultOption = opt;
+    defaultOption = recOpt?.value || "";
   }
 
   const decisionBlocked =
     Boolean(blockers?.blocked) ||
-    (Array.isArray(blockers?.blocking_reasons) && (blockers!.blocking_reasons as unknown[]).length > 0);
+    (Array.isArray(blockers?.blocking_reasons) && (blockers!.blocking_reasons as unknown[]).length > 0) ||
+    decisionHasOpenBlockers(selectedDecision);
 
   return (
     <section className="panel">
@@ -385,6 +424,10 @@ export function DecisionPanel(props: DecisionPanelProps) {
         const rec = d.recommendation as Record<string, unknown> | undefined;
         const status = String(d.status || "").toUpperCase();
         const actionable = !["APPROVED", "REJECTED", "KEEP_CURRENT"].includes(status);
+        const blocked = decisionHasOpenBlockers(d);
+        const recLabel =
+          normalizeDecisionOption((rec?.option ?? rec?.code) as DecisionOptionInput)?.label ||
+          String(rec?.summary || d.recommendation || "—");
         return (
           <div
             key={did}
@@ -399,14 +442,17 @@ export function DecisionPanel(props: DecisionPanelProps) {
             <h3>QUESTION: {String(d.question || d.domain || d.id)}</h3>
             <p className="muted">Evidence: см. decision center / sources</p>
             <p>
-              System recommendation:{" "}
-              {String(rec?.option || rec?.summary || d.recommendation || "—")}
+              System recommendation: {recLabel}
             </p>
             <p>Status: {humanLabel(d.status)}</p>
+            {blocked ? (
+              <p className="muted small status-red">Blocked — есть dependency blockers (approve недоступен)</p>
+            ) : null}
             <div className="header-actions" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                disabled={busy || !actionable || !canApprove || (decisionBlocked && selectedId === did)}
+                disabled={busy || !actionable || !canApprove || blocked}
+                title={blocked ? formatBlockerHint(d) : undefined}
                 onClick={() => openForm({ kind: "decision", id: did, action: "approve" })}
               >
                 Approve
@@ -420,7 +466,8 @@ export function DecisionPanel(props: DecisionPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={busy || !actionable || !canApprove}
+                disabled={busy || !actionable || !canApprove || blocked}
+                title={blocked ? formatBlockerHint(d) : undefined}
                 onClick={() => openForm({ kind: "decision", id: did, action: "modify" })}
               >
                 Modify
@@ -467,11 +514,13 @@ export function DecisionPanel(props: DecisionPanelProps) {
               </p>
               <p>
                 <strong>Recommendation:</strong>{" "}
-                {String(
-                  (selectedDecision.recommendation as Record<string, unknown> | undefined)?.option ||
-                    (selectedDecision.recommendation as Record<string, unknown> | undefined)?.summary ||
-                    "—",
-                )}
+                {normalizeDecisionOption(
+                  ((selectedDecision.recommendation as Record<string, unknown> | undefined)?.option ??
+                    (selectedDecision.recommendation as Record<string, unknown> | undefined)?.code) as DecisionOptionInput,
+                )?.label ||
+                  String(
+                    (selectedDecision.recommendation as Record<string, unknown> | undefined)?.summary || "—",
+                  )}
               </p>
               {selectedDecision.current_value != null || selectedDecision.value != null ? (
                 <p>
@@ -551,12 +600,12 @@ export function DecisionPanel(props: DecisionPanelProps) {
             <div className="header-actions">
               <button
                 type="button"
-                disabled={busy || !canApprove || decisionBlocked}
+                disabled={busy || !canApprove || decisionBlocked || decisionHasOpenBlockers(selectedDecision)}
                 title={
                   !canApprove
                     ? "Требуется approve_decisions"
-                    : decisionBlocked
-                      ? "Есть blockers"
+                    : decisionBlocked || decisionHasOpenBlockers(selectedDecision)
+                      ? formatBlockerHint(selectedDecision)
                       : undefined
                 }
                 onClick={() =>
