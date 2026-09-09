@@ -836,5 +836,11 @@ def test_t16_blocker_has_provenance(golden):
     for d in golden[2]:
         for b in d.blocking_reasons:
             assert b.get("blocking_reason_code")
-            assert b.get("kind") in {"CONFLICT", "GAP", "MISSING_FIELD", "EVIDENCE"}
+            assert b.get("kind") in {
+                "CONFLICT",
+                "GAP",
+                "KNOWLEDGE_GAP",
+                "MISSING_FIELD",
+                "EVIDENCE",
+            }
             assert b.get("reference_id") or b.get("field_path")

@@ -70,6 +70,17 @@ def update_runtime(
         )
 
 
+def reset_runtime() -> None:
+    """Drop process-local overrides so env Settings decide again."""
+    with _lock:
+        _runtime.enabled = None
+        _runtime.provider = None
+        _runtime.model = None
+        _runtime.base_url = None
+        _runtime.api_key = None
+        _runtime.updated_at = None
+
+
 def mask_api_key(key: str | None) -> str | None:
     if not key:
         return None

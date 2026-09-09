@@ -1525,6 +1525,97 @@ export function reviewCanonicalFact(
   });
 }
 
+/** Phase 29 — knowledge gaps: what the documents did not provide. */
+export type GapProposal = {
+  claim_id: string;
+  value: unknown;
+  unit?: string | null;
+  excerpt?: string | null;
+  confidence?: string | null;
+  verification_status: string;
+  applicability?: string | null;
+  usable: boolean;
+  extraction_method?: string | null;
+  pk_parameter?: string | null;
+};
+
+export type StudyGap = {
+  code: string;
+  title: string;
+  why: string;
+  note?: string | null;
+  blocks: string[];
+  blocked_by_this: string;
+  requested_by: string[];
+  field_path?: string | null;
+  unit?: string | null;
+  numeric: boolean;
+  requires_pk_parameter: boolean;
+  pk_parameter_options: string[];
+  resolution: string[];
+  sources_hint: string[];
+  status: "OPEN" | "PROPOSED" | "VERIFIED";
+  proposals: GapProposal[];
+  research_task_id?: string | null;
+  needs_apply: boolean;
+};
+
+export type GapsPanel = {
+  study_id: string;
+  gaps: StudyGap[];
+  resolved: Array<Record<string, unknown>>;
+  counts: { total: number; open: number; proposed: number; verified: number };
+};
+
+export async function listStudyGaps(studyId: string): Promise<GapsPanel> {
+  const raw = await request<Record<string, unknown>>(`/api/studies/${studyId}/gaps`);
+  return {
+    study_id: String(raw.study_id || studyId),
+    gaps: (raw.gaps as StudyGap[]) || [],
+    resolved: (raw.resolved as Array<Record<string, unknown>>) || [],
+    counts: (raw.counts as GapsPanel["counts"]) || { total: 0, open: 0, proposed: 0, verified: 0 },
+  };
+}
+
+export function researchStudyGap(
+  studyId: string,
+  code: string,
+  body?: { active_substance?: string; dosage_form?: string; dose?: string; use_mock_provider?: boolean },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/gaps/${code}/research`, {
+    method: "POST",
+    body: JSON.stringify(body || { use_mock_provider: true }),
+  });
+}
+
+export function verifyStudyGap(
+  studyId: string,
+  code: string,
+  body: { claim_id: string; reviewer?: string; applicability_reason?: string },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/gaps/${code}/verify`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function resolveStudyGapManually(
+  studyId: string,
+  code: string,
+  body: {
+    value: unknown;
+    rationale: string;
+    unit?: string | null;
+    pk_parameter?: string | null;
+    actor?: string;
+  },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/gaps/${code}/resolve-manual`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function requestDecisionEvidence(
   studyId: string,
   body: { decision_id?: string; question?: string; reason: string; actor?: string },

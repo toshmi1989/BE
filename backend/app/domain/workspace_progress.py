@@ -41,16 +41,98 @@ STEP_LABELS_RU = {
     "docx": "DOCX",
 }
 
+# Engine sub-steps live inside the five pipeline steps of the writer UI
 TAB_FOR_STEP = {
     "documents": "documents",
     "extraction": "data",
     "decisions": "decisions",
-    "sample_size": "sample-size",
-    "statistics": "statistics",
+    "sample_size": "decisions",
+    "statistics": "decisions",
     "protocol": "protocol",
-    "preflight": "preflight",
+    "preflight": "protocol",
     "docx": "protocol",
 }
+
+
+# Preflight checks whose failure is already reported as a richer blocker
+PREFLIGHT_ALREADY_REPORTED: frozenset[str] = frozenset(
+    {
+        "PRIMARY_BE_APPROVED",
+        "SAMPLE_SIZE_APPROVED",
+        "HAS_DOCUMENTS",
+        "HAS_CANDIDATES",
+    }
+)
+
+# Failure of a check, said as a problem the writer can act on
+PREFLIGHT_COPY_RU: dict[str, dict[str, str]] = {
+    "NO_CRITICAL_CONFLICT": {
+        "what": "Есть неразрешённый критический конфликт в данных",
+        "why": "Два источника дают разные значения одного поля — нужно выбрать верное.",
+        "where": "Данные",
+        "action_label": "Открыть Данные",
+        "tab": "data",
+    },
+    "DECISIONS_PRESENT": {
+        "what": "Решения ещё не рассчитаны",
+        "why": "Движок решений не запускался для текущего пакета документов.",
+        "where": "Решения",
+        "action_label": "Открыть Решения",
+        "tab": "decisions",
+    },
+    "DRAFT_EXISTS": {
+        "what": "Черновик протокола не собран",
+        "why": "Текст протокола формируется из утверждённых решений и проверенных фактов.",
+        "where": "Протокол",
+        "action_label": "Собрать черновик",
+        "tab": "protocol",
+    },
+    "PROTOCOL_DEPENDENCIES_STALE": {
+        "what": "Черновик устарел относительно утверждённых решений",
+        "why": "После сборки черновика решения или данные менялись — нужно пересобрать.",
+        "where": "Протокол",
+        "action_label": "Пересобрать черновик",
+        "tab": "protocol",
+    },
+}
+
+
+# Engine reason codes said in plain Russian
+REASON_COPY_RU: dict[str, str] = {
+    "MISSING_VERIFIED_CVINTRA": "нет подтверждённой внутрииндивидуальной вариабельности (CVintra)",
+    "MISSING_CVINTRA_CMAX": "нет CVintra для Cmax",
+    "MISSING_CVINTRA_AUC": "нет CVintra для AUC",
+    "CV_PROPOSED_NOT_ALLOWED": "найденная CVintra ещё не подтверждена экспертом",
+    "MULTIPLE_ELIGIBLE_INPUTS_REQUIRES_EXPERT_SELECTION": "несколько подходящих значений — нужен выбор эксперта",
+    "MULTIPLE_CONFLICTING_CVINTRA": "найденные значения CVintra противоречат друг другу",
+    "MISSING_ANALYSIS_POPULATION_RULE": "не задана популяция анализа",
+    "MISSING_PRIMARY_PK_PARAMETER": "не выбран основной PK-параметр",
+    "REQUIRES_EXPERT_SELECTION": "требуется выбор эксперта",
+    "REQUIRES_EXPERT_DECISION": "требуется решение эксперта",
+    "PRIMARY_BE_REQUIRES_EXPERT_SELECTION": "основной endpoint выбирает эксперт",
+    "MISSING_ACCEPTANCE_INTERVAL": "не задан интервал приемлемости",
+    "MISSING_CONFIDENCE_LEVEL": "не задан доверительный интервал",
+    "MISSING_TRANSFORMATION": "не задано преобразование данных",
+    "MISSING_STATISTICAL_MODEL": "не задана статистическая модель",
+    "METHOD_NOT_IMPLEMENTED_REQUIRES_REVIEW": "метод для этого дизайна требует ручной проверки",
+    "MISSING_TMAX_FOR_SAMPLING": "нет подтверждённого ожидаемого Tmax",
+    "MISSING_HALF_LIFE_FOR_WASHOUT": "нет подтверждённого периода полувыведения",
+}
+
+
+def _humanize_reasons(reasons: list[Any]) -> str:
+    """Turn engine codes into a sentence a writer can act on."""
+    seen: list[str] = []
+    for r in reasons:
+        code = str(r)
+        text = REASON_COPY_RU.get(code)
+        if text is None:
+            continue
+        if text not in seen:
+            seen.append(text)
+    if not seen:
+        return ""
+    return ("Причина: " if len(seen) == 1 else "Причины: ") + "; ".join(seen) + "."
 
 
 def _ss_approved(calc: Any | None) -> bool:
@@ -137,29 +219,41 @@ def _actionable_blockers(
                 {
                     "severity": "WARNING" if not any(b.get("code") == "UNRESOLVED_CRITICAL_CONFLICT" for b in blockers) else "INFO",
                     "code": "SAMPLE_SIZE_NOT_APPROVED",
-                    "what": "Sample Size недоступен или не утверждён",
-                    "why": "; ".join(str(r) for r in reasons) if reasons else f"Статус: {getattr(ss, 'status', 'NO_CALCULATION')}",
-                    "where": "Sample Size",
-                    "action_label": "Открыть Sample Size",
-                    "tab": "sample-size",
+                    "what": "Размер выборки не рассчитан или не утверждён",
+                    "why": _humanize_reasons(reasons)
+                    or f"Статус расчёта: {getattr(ss, 'status', 'нет расчёта')}",
+                    "where": "Решения",
+                    "action_label": "Открыть Решения",
+                    "tab": "decisions",
                     "resolve_dependency": True,
                 }
             )
 
     if st is None or not _st_approved(st):
-        br = list(getattr(st, "blocking_reasons", None) or []) if st else ["PRIMARY_BE_REQUIRES_EXPERT_SELECTION"]
-        primary = any("PRIMARY" in str(x).upper() or "REQUIRES_EXPERT" in str(x).upper() for x in br) or st is None
+        br = [str(x) for x in (getattr(st, "blocking_reasons", None) or [])] if st else []
+        needs_primary = st is None or any(
+            "PRIMARY" in x.upper() or "REQUIRES_EXPERT_SELECTION" in x.upper() for x in br
+        )
+        needs_population = any("ANALYSIS_POPULATION" in x.upper() for x in br)
+        if needs_population and not needs_primary:
+            what = "Не задана популяция анализа"
+        elif needs_primary and needs_population:
+            what = "Не выбраны основной endpoint и популяция анализа"
+        elif needs_primary:
+            what = "Не выбран основной endpoint биоэквивалентности"
+        else:
+            what = "Статистический план не утверждён"
         blockers.append(
             {
-                "severity": "CRITICAL" if primary else "WARNING",
-                "code": "PRIMARY_BE_NOT_APPROVED" if primary else "STATISTICS_NOT_APPROVED",
-                "what": "Выберите основной endpoint анализа биоэквивалентности."
-                if primary
-                else "Statistics plan не утверждён",
-                "why": "; ".join(str(x) for x in br) if br else "Нет утверждённого статистического плана",
-                "where": "Statistics" if not primary else "Решения / Statistics",
-                "action_label": "Открыть Statistics" if not primary else "Открыть Решения",
-                "tab": "statistics" if not primary else "decisions",
+                "severity": "CRITICAL" if (needs_primary or needs_population) else "WARNING",
+                "code": "PRIMARY_BE_NOT_APPROVED"
+                if (needs_primary or needs_population)
+                else "STATISTICS_NOT_APPROVED",
+                "what": what,
+                "why": _humanize_reasons(br) or "Нет утверждённого статистического плана.",
+                "where": "Решения",
+                "action_label": "Открыть Решения",
+                "tab": "decisions",
             }
         )
 
@@ -167,64 +261,46 @@ def _actionable_blockers(
         code = str(chk.get("code") or "")
         if any(b.get("code") == code for b in blockers):
             continue
-        tab = "decisions"
-        label = "Открыть Решения"
-        if "SAMPLE" in code.upper() or "N_" in code.upper():
-            tab, label = "sample-size", "Открыть Sample Size"
-        elif "STAT" in code.upper() or "PRIMARY_BE" in code.upper():
-            tab, label = "statistics", "Открыть Statistics"
-        elif "EVIDENCE" in code.upper() or "RESEARCH" in code.upper():
-            tab, label = "evidence", "Открыть Research"
-        elif "DOC" in code.upper():
-            tab, label = "documents", "Открыть Документы"
+        # Preflight check codes name the desired end state, not the problem,
+        # and several restate a blocker already listed above.
+        if code in PREFLIGHT_ALREADY_REPORTED:
+            continue
+        copy = PREFLIGHT_COPY_RU.get(code)
+        if copy is None:
+            continue
         blockers.append(
             {
                 "severity": str(chk.get("severity") or "CRITICAL"),
-                "code": code or "PREFLIGHT_BLOCKER",
-                "what": str(chk.get("message") or code or "Блокер preflight"),
-                "why": str(chk.get("detail") or chk.get("message") or "Правило безопасности / готовности"),
-                "where": label.replace("Открыть ", ""),
-                "action_label": label,
-                "tab": tab,
+                "code": code,
+                "what": copy["what"],
+                "why": copy["why"],
+                "where": copy["where"],
+                "action_label": copy["action_label"],
+                "tab": copy["tab"],
             }
         )
 
-    # Soft local engine gaps from decisions (do not imply whole-protocol freeze)
-    for d in list_decisions(study_id):
-        domain = str(getattr(d, "domain", "") or "").upper()
-        status = str(getattr(d, "status", "") or "").upper()
-        if domain != "SAMPLING" or status not in {"BLOCKED", "REVIEW_REQUIRED"}:
+    # Missing inputs gate only the steps that consume them — never the whole protocol
+    from app.domain.workspace_gaps import EXPERT_DECISION, collect_study_gaps
+
+    for gap in collect_study_gaps(study_id).get("gaps") or []:
+        if gap.get("status") == "VERIFIED":
             continue
-        gaps = list(getattr(d, "knowledge_gaps", None) or [])
-        reasons = list(getattr(d, "blocking_reasons", None) or [])
-        codes = {
-            str(g.get("code") if isinstance(g, dict) else getattr(g, "code", "") or "")
-            for g in gaps
-        }
-        for r in reasons:
-            if isinstance(r, dict):
-                codes.add(str(r.get("blocking_reason_code") or r.get("code") or ""))
-        if "MISSING_TMAX_FOR_SAMPLING" in codes and not any(
-            b.get("code") == "SAMPLING_NEEDS_EXPECTED_TMAX" for b in blockers
-        ):
-            blockers.append(
-                {
-                    "severity": "WARNING",
-                    "code": "SAMPLING_NEEDS_EXPECTED_TMAX",
-                    "what": "Sampling требует подтверждённого ожидаемого Tmax",
-                    "why": (
-                        "Плановый (expected) Tmax нужен для дизайна забора; "
-                        "наблюдаемый Tmax после исследования — другой параметр. "
-                        "Остальные этапы протокола не заморожены."
-                    ),
-                    "where": "Решения / Sampling",
-                    "action_label": "Найти ожидаемый Tmax",
-                    "tab": "decisions",
-                    "soft_gate": True,
-                    "scope": "ENGINE",
-                    "next_action": "FIND_EXPECTED_TMAX",
-                }
-            )
+        engine_side = EXPERT_DECISION in (gap.get("resolution") or [])
+        blockers.append(
+            {
+                "severity": "WARNING",
+                "code": f"GAP_{gap['code']}",
+                "what": f"Нет данных: {gap['title']}",
+                "why": f"{gap['why']} Ждёт: {gap['blocked_by_this']}. Остальные шаги не заблокированы.",
+                "where": "Решения" if engine_side else "Пробелы",
+                "action_label": "Открыть Решения" if engine_side else "Найти или ввести значение",
+                "tab": "decisions" if engine_side else "gaps",
+                "soft_gate": True,
+                "scope": "STEP",
+                "gap_code": gap["code"],
+            }
+        )
 
     return blockers
 
@@ -245,10 +321,10 @@ def _next_action(steps: list[dict[str, Any]], blockers: list[dict[str, Any]]) ->
         ("documents", "Загрузите документы", "documents"),
         ("extraction", "Проверьте извлечённые данные", "data"),
         ("decisions", "Примите экспертные решения", "decisions"),
-        ("sample_size", "Проверьте Sample Size", "sample-size"),
-        ("statistics", "Утвердите Statistics", "statistics"),
+        ("sample_size", "Рассчитайте и утвердите размер выборки", "decisions"),
+        ("statistics", "Утвердите статистический план", "decisions"),
         ("protocol", "Откройте Preview", "protocol"),
-        ("preflight", "Запустите финальную проверку", "preflight"),
+        ("preflight", "Запустите финальную проверку", "protocol"),
         ("docx", "Сгенерируйте DOCX", "protocol"),
     ]
     for sid, label, tab in order:
@@ -284,10 +360,12 @@ def _map_primary_ru(b: dict[str, Any]) -> str:
         return "Разрешите критический конфликт"
     if code == "NOT_ANALYZED":
         return "Анализируйте пакет исследования"
+    if code.startswith("GAP_"):
+        return str(b.get("what") or "Закройте пробел в данных")
     if "SAMPLE" in code:
-        return "Проверьте Sample Size"
+        return "Рассчитайте и утвердите размер выборки"
     if "PRIMARY_BE" in code or "STAT" in code:
-        return "Утвердите Statistics"
+        return str(b.get("what") or "Утвердите статистический план")
     return str(b.get("action_label") or "Продолжите работу")
 
 

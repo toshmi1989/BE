@@ -7,6 +7,16 @@ from app.main import create_app
 import app.models  # noqa: F401 — register metadata
 
 
+@pytest.fixture(autouse=True)
+def _reset_ai_runtime():
+    """AI overrides are process-global — never let one test enable AI for the next."""
+    from app.domain.ai_runtime_settings import reset_runtime
+
+    reset_runtime()
+    yield
+    reset_runtime()
+
+
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")

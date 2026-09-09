@@ -44,7 +44,8 @@ def apply_verified_research_to_context(
                 ctx.fact_statuses["pk.t_half"] = "VERIFIED"
                 ctx.fact_sources["pk.expected_t_half"] = "RESEARCH_EVIDENCE"
                 ctx.fact_sources["pk.t_half"] = "RESEARCH_EVIDENCE"
-                applied.append("pk.expected_t_half")
+                # Both names carry the same verified planning value
+                applied.extend(["pk.expected_t_half", "pk.t_half"])
                 ctx.knowledge_gaps = [
                     g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_HALF_LIFE_FOR_WASHOUT"
                 ]
@@ -64,7 +65,7 @@ def apply_verified_research_to_context(
             ctx.fact_statuses["pk.Tmax"] = "VERIFIED"
             ctx.fact_sources["pk.expected_tmax"] = "RESEARCH_EVIDENCE"
             ctx.fact_sources["pk.Tmax"] = "RESEARCH_EVIDENCE"
-            applied.append("pk.expected_tmax")
+            applied.extend(["pk.expected_tmax", "pk.Tmax"])
             ctx.knowledge_gaps = [
                 g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_TMAX_FOR_SAMPLING"
             ]

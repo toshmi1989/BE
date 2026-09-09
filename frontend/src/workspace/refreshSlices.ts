@@ -4,6 +4,7 @@ export type RefreshSlice =
   | "core"
   | "documents"
   | "decisions"
+  | "gaps"
   | "engines"
   | "protocol"
   | "history"
@@ -13,6 +14,7 @@ export const ALL_SLICES: RefreshSlice[] = [
   "core",
   "documents",
   "decisions",
+  "gaps",
   "engines",
   "protocol",
   "history",
@@ -26,10 +28,11 @@ const AFFECT_ALIASES: Record<string, RefreshSlice[]> = {
   sample_size: ["engines", "progress", "core"],
   statistics: ["engines", "progress", "core"],
   stats: ["engines", "progress", "core"],
-  decisions: ["decisions", "progress", "core"],
-  decision: ["decisions", "progress", "core"],
+  decisions: ["decisions", "gaps", "progress", "core"],
+  decision: ["decisions", "gaps", "progress", "core"],
   documents: ["documents", "progress", "core"],
-  evidence: ["decisions", "progress"],
+  evidence: ["decisions", "gaps", "progress"],
+  gaps: ["gaps", "decisions", "progress"],
   history: ["history"],
   readiness: ["core", "progress"],
   preflight: ["core", "progress"],

@@ -836,6 +836,230 @@ def review_canonical_fact(
     }
 
 
+class GapManualIn(BaseModel):
+    value: Any = None
+    rationale: str
+    unit: str | None = None
+    pk_parameter: str | None = None
+    source_note: str | None = None
+    actor: str | None = None
+    package_id: str | None = None
+
+
+class GapResearchIn(BaseModel):
+    active_substance: str | None = None
+    dosage_form: str | None = None
+    dose: str | None = None
+    use_mock_provider: bool = True
+    package_id: str | None = None
+
+
+class GapVerifyIn(BaseModel):
+    claim_id: str
+    reviewer: str | None = None
+    applicability: str = "DIRECT"
+    applicability_reason: str | None = None
+    package_id: str | None = None
+
+
+def _gap_or_404(study_id: str, code: str, package_id: str | None) -> dict[str, Any]:
+    from app.domain.workspace_gaps import collect_study_gaps
+
+    panel = collect_study_gaps(study_id, package_id=package_id)
+    for g in panel["gaps"]:
+        if g["code"] == code:
+            return g
+    raise HTTPException(status_code=404, detail=f"Пробел {code} не найден для исследования")
+
+
+@router.get("/studies/{study_id}/gaps")
+def list_study_gaps(
+    study_id: str,
+    package_id: str | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Inputs the documents did not provide, each with the one place to close it."""
+    from app.domain.workspace_gaps import collect_study_gaps
+
+    _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    return collect_study_gaps(study_id, package_id=package_id)
+
+
+@router.post("/studies/{study_id}/gaps/{code}/research")
+def research_study_gap(
+    study_id: str,
+    code: str,
+    payload: GapResearchIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Search open sources for a missing value. Result stays PROPOSED until verified."""
+    from app.domain.research_evidence_engine import (
+        create_tasks_from_gaps,
+        default_provider,
+        run_research_task,
+    )
+    from app.domain.workspace_gaps import GAP_CATALOG, RESEARCH, collect_study_gaps
+
+    payload = payload or GapResearchIn()
+    auth = _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+
+    meta = GAP_CATALOG.get(code)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"Неизвестный пробел: {code}")
+    if RESEARCH not in meta["resolution"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"«{meta['title']}» не ищется в источниках — это экспертное решение",
+        )
+
+    tasks = create_tasks_from_gaps(
+        study_id,
+        [{"code": code, "title": meta["title"]}],
+        package_id=payload.package_id,
+        context={
+            "active_substance": payload.active_substance,
+            "analyte": payload.active_substance,
+            "dose": payload.dose,
+            "dosage_form": payload.dosage_form,
+        },
+    )
+    if not tasks:
+        raise HTTPException(status_code=422, detail="Не удалось создать исследовательскую задачу")
+    task = tasks[0]
+    run_research_task(
+        task.id,
+        provider=default_provider(use_mock=payload.use_mock_provider),
+        context={
+            "active_substance": payload.active_substance,
+            "analyte": payload.active_substance,
+            "dose": payload.dose,
+            "dosage_form": payload.dosage_form,
+        },
+    )
+    append_audit(
+        study_id,
+        event="GAP_RESEARCH_RUN",
+        who=auth.email if auth else "writer",
+        what=code,
+        reason="Поиск недостающего значения в открытых источниках",
+        new_value={"research_task_id": task.id},
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    gap = next((g for g in panel["gaps"] if g["code"] == code), None)
+    return {
+        "code": code,
+        "research_task_id": task.id,
+        "gap": gap,
+        "auto_verified": False,
+        "study_mutated": False,
+    }
+
+
+@router.post("/studies/{study_id}/gaps/{code}/verify")
+def verify_study_gap(
+    study_id: str,
+    code: str,
+    payload: GapVerifyIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Expert confirms a proposed value. Only then do dependent steps use it."""
+    from app.domain.research_evidence_engine import verify_claim
+    from app.domain.workspace_gaps import apply_verified_evidence, collect_study_gaps
+
+    auth = _auth_for_study(
+        study_id, permission="approve_decisions", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    reviewer = payload.reviewer or (auth.email if auth else "")
+    if not str(reviewer or "").strip():
+        raise HTTPException(status_code=400, detail="Требуется имя проверяющего")
+    try:
+        claim = verify_claim(
+            payload.claim_id,
+            reviewer=reviewer,
+            applicability=payload.applicability,
+            applicability_reason=payload.applicability_reason
+            or "Проверено экспертом для этого исследования",
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    applied = apply_verified_evidence(study_id, package_id=payload.package_id)
+    append_audit(
+        study_id,
+        event="GAP_VALUE_VERIFIED",
+        who=reviewer,
+        what=code,
+        new_value={"claim_id": claim.id, "value": claim.value, "unit": claim.unit},
+        reason=payload.applicability_reason or "Экспертное подтверждение значения",
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    return {
+        "code": code,
+        "claim": claim.to_dict(),
+        "applied_fields": applied["applied_fields"],
+        "recomputed_domains": applied["recomputed_domains"],
+        "gaps": panel["gaps"],
+        "counts": panel["counts"],
+        "study_mutated": False,
+    }
+
+
+@router.post("/studies/{study_id}/gaps/{code}/resolve-manual")
+def resolve_study_gap_manually(
+    study_id: str,
+    code: str,
+    payload: GapManualIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Expert enters a missing value directly, with a rationale. Never silent."""
+    from app.domain.workspace_gaps import collect_study_gaps, resolve_gap_manually
+
+    auth = _auth_for_study(
+        study_id, permission="approve_decisions", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "")
+    try:
+        result = resolve_gap_manually(
+            study_id,
+            code,
+            value=payload.value,
+            rationale=payload.rationale,
+            actor=actor,
+            unit=payload.unit,
+            pk_parameter=payload.pk_parameter,
+            source_note=payload.source_note,
+            package_id=payload.package_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    append_audit(
+        study_id,
+        event="GAP_RESOLVED_BY_EXPERT",
+        who=actor,
+        what=code,
+        new_value={"value": payload.value, "unit": payload.unit},
+        reason=payload.rationale,
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    return {**result, "gaps": panel["gaps"], "counts": panel["counts"]}
+
+
 @router.post("/studies/{study_id}/decisions/request-evidence")
 def request_decision_evidence(
     study_id: str,

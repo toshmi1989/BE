@@ -10,7 +10,6 @@ import {
   bootstrapResearchCenterGolden,
   getSampleSizePanel,
   recomputeStatisticsGolden,
-  getWriterReview,
   getBetaCases,
   createWorkspaceStudy,
   listWorkspaceDocuments,
@@ -29,20 +28,31 @@ import {
   listWorkspaceArtifacts,
   downloadWorkspaceArtifactUrl,
   listWorkspaceSnapshots,
+  listStudyGaps,
   formatApiError,
+  type GapsPanel as GapsPanelData,
 } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { DecisionForm } from "../components/DecisionForm";
 import { DecisionPanel } from "../components/DecisionPanel";
+import { GapsPanel } from "../components/GapsPanel";
+import { SampleSizeCalcForm, StatisticsPlanForm } from "../components/EngineForms";
 import { StudyList } from "../components/StudyList";
 import { Dashboard } from "./Dashboard";
 import { ControlledBetaDashboard } from "./ControlledBetaDashboard";
-import { computeNextAction, fromBackendPrimary, normalizeTab, type NavId } from "../nextAction";
+import {
+  buildPipelineSteps,
+  computeNextAction,
+  fromBackendPrimary,
+  normalizeTab,
+  type NavId,
+} from "../nextAction";
 import {
   ANALYZE_STAGES,
   DEMO_STUDY_ID,
   docStatusLabel,
   humanLabel,
+  humanReasons,
   isDemoStudy,
   stepStatusLabel,
 } from "../writerLabels";
@@ -63,16 +73,14 @@ import {
   formatWorkflowStepErrors,
 } from "../workspace/workflowSteps";
 
+/** Five pipeline steps: upload → extract → close gaps → decide → assemble. */
 const PRIMARY_NAV: Array<{ id: NavId; label: string }> = [
   { id: "overview", label: "Обзор" },
-  { id: "documents", label: "Документы" },
-  { id: "data", label: "Данные" },
-  { id: "decisions", label: "Решения" },
-  { id: "evidence", label: "Evidence" },
-  { id: "sample-size", label: "Sample Size" },
-  { id: "statistics", label: "Statistics" },
-  { id: "protocol", label: "Протокол" },
-  { id: "preflight", label: "Проверка" },
+  { id: "documents", label: "1. Документы" },
+  { id: "data", label: "2. Данные" },
+  { id: "gaps", label: "3. Пробелы" },
+  { id: "decisions", label: "4. Решения" },
+  { id: "protocol", label: "5. Протокол" },
   { id: "history", label: "История" },
 ];
 
@@ -174,10 +182,10 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   const [conflicts, setConflicts] = useState<Array<Record<string, unknown>>>([]);
   const [preflight, setPreflight] = useState<Record<string, unknown> | null>(null);
   const [audit, setAudit] = useState<Array<Record<string, unknown>>>([]);
-  const [review, setReview] = useState<Record<string, unknown> | null>(null);
   const [betaCases, setBetaCases] = useState<Array<Record<string, unknown>>>([]);
   const [documents, setDocuments] = useState<Array<Record<string, unknown>>>([]);
   const [decisions, setDecisions] = useState<Array<Record<string, unknown>>>([]);
+  const [gapsPanel, setGapsPanel] = useState<GapsPanelData | null>(null);
   const [samplePanel, setSamplePanel] = useState<Record<string, unknown> | null>(null);
   const [statsPanel, setStatsPanel] = useState<Record<string, unknown> | null>(null);
   const [protocolPreview, setProtocolPreview] = useState<Record<string, unknown> | null>(null);
@@ -268,6 +276,14 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
           } catch {
             /* keep */
           }
+        }
+      }
+
+      if (want.has("gaps")) {
+        try {
+          setGapsPanel(await listStudyGaps(sid));
+        } catch {
+          setGapsPanel(null);
         }
       }
 
@@ -384,6 +400,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
     setAudit([]);
     setDocuments([]);
     setDecisions([]);
+    setGapsPanel(null);
     setSamplePanel(null);
     setStatsPanel(null);
     setProtocolPreview(null);
@@ -529,9 +546,10 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   async function runPreflight() {
     if (!activeStudy) return;
     await withOp("preflight", async () => {
+      // Final check lives inside the protocol step now
       setPreflight(await getStudyPreflight(activeStudy));
-      await refreshSlices(["core", "progress"], activeStudy);
-      goTab("preflight");
+      await refreshSlices(["core", "gaps", "progress"], activeStudy);
+      goTab("protocol");
     });
   }
 
@@ -587,6 +605,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
             (d) => !["APPROVED", "REJECTED", "KEEP_CURRENT"].includes(String(d.status || "").toUpperCase()),
           ).length,
       ),
+      openGaps: Number(gapsPanel?.counts.open ?? 0) + Number(gapsPanel?.counts.proposed ?? 0),
       sampleSizeStatus: String(cards.sample_size_status || samplePanel?.status || "NONE"),
       statisticsStatus: String(cards.statistics_status || statsPanel?.status || "NONE"),
       protocolStatus: String(cards.protocol_status || "NONE"),
@@ -601,6 +620,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
     documents,
     conflicts,
     decisions,
+    gapsPanel,
     samplePanel,
     statsPanel,
     readiness,
@@ -611,6 +631,10 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
 
   const canGenerateDocx = Boolean(preflight?.can_generate_docx ?? progressPreflight.can_generate_docx);
   const hasCriticalBlockers = progressBlockers.some((b) => String(b.severity).toUpperCase() === "CRITICAL");
+  // One list of what is left, deduplicated — never the same issue said twice
+  const remainingWork = progressBlockers.filter(
+    (b, i, arr) => arr.findIndex((x) => String(x.code) === String(b.code)) === i,
+  );
 
   const ssBlocked =
     !samplePanel ||
@@ -620,32 +644,46 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   const ssApproved = ["APPROVED", "ACCEPTED"].includes(String(samplePanel?.status || "").toUpperCase());
 
   const statsBlockingReasons = ((statsPanel?.blocking_reasons as string[]) || []).filter(Boolean);
-  const primaryBeMissing =
+  const statsCurrentPrimary = (((statsPanel?.parameters as Array<Record<string, unknown>>) || [])
+    .filter((p) => String(p.role_label || "") === "Primary BE")
+    .map((p) => String(p.parameter || ""))).filter(Boolean);
+  // Only the expert picks the primary endpoint and the analysis population
+  const statsNeedsExpertChoice =
     !statsPanel ||
     String(statsPanel.status) === "NO_PLAN" ||
-    statsBlockingReasons.some(
-      (b) => String(b).toUpperCase().includes("PRIMARY") || String(b).toUpperCase().includes("REQUIRES_EXPERT"),
+    statsBlockingReasons.some((b) =>
+      /PRIMARY|ANALYSIS_POPULATION|REQUIRES_EXPERT/i.test(String(b)),
     );
+
+  const unresolvedGapCodes = new Set(
+    (gapsPanel?.gaps || []).filter((g) => g.status !== "VERIFIED").map((g) => g.code),
+  );
+  const cvReady = Boolean(gapsPanel) && !unresolvedGapCodes.has("MISSING_CVINTRA");
 
   function renderProgressRail() {
     if (!activeStudy || !progressSteps.length) return null;
+    const steps = buildPipelineSteps(
+      progressSteps,
+      gapsPanel ? { total: gapsPanel.counts.total, open: gapsPanel.counts.open + gapsPanel.counts.proposed } : null,
+    );
     return (
-      <nav className="progress-rail" aria-label="Writer workflow progress">
-        {progressSteps.map((step) => {
-          const st = String(step.status || "NOT_STARTED");
-          return (
-            <button
-              key={String(step.id)}
-              type="button"
-              className={`progress-step ${stepStatusClass(st)}`}
-              onClick={() => goTab(String(step.tab || step.id))}
-              title={String(step.label)}
-            >
-              <span className="progress-step-label">{String(step.label)}</span>
-              <span className={`status-pill ${stepStatusClass(st)}`}>{stepStatusLabel(st)}</span>
-            </button>
-          );
-        })}
+      <nav className="progress-rail" aria-label="Этапы подготовки протокола">
+        {steps.map((step) => (
+          <button
+            key={step.id}
+            type="button"
+            className={`progress-step ${stepStatusClass(step.status)} ${tab === step.id ? "current" : ""}`}
+            onClick={() => goTab(step.id)}
+            title={step.label}
+          >
+            <span className="progress-step-label">
+              {step.index}. {step.label}
+            </span>
+            <span className={`status-pill ${stepStatusClass(step.status)}`}>
+              {stepStatusLabel(step.status)}
+            </span>
+          </button>
+        ))}
       </nav>
     );
   }
@@ -1204,16 +1242,16 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               </div>
             )}
 
-            {progressBlockers.length > 0 && (
+            {remainingWork.length > 0 && (
               <div>
-                <h3>Блокеры</h3>
-                {progressBlockers.map((b) => (
+                <h3>Что осталось сделать</h3>
+                {remainingWork.map((b) => (
                   <BlockerCard
                     key={String(b.code)}
                     what={String(b.what || b.code)}
                     why={String(b.why || "—")}
                     where={String(b.where || "—")}
-                    actionLabel={String(b.action_label || "Resolve")}
+                    actionLabel={String(b.action_label || "Перейти")}
                     severity={String(b.severity)}
                     onResolve={() => goTab(String(b.tab || "overview"))}
                   />
@@ -1544,68 +1582,80 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
           </>
         )}
 
-        {tab === "evidence" && (
+        {tab === "gaps" && activeStudy && (
           <section className="panel">
-            <h2>Evidence</h2>
-            <p className="muted">Claims remain PROPOSED until expert verification.</p>
-            <button
-              type="button"
-              disabled={ops.decision.busy || !activeStudy}
-              onClick={() => {
-                void withOp("decision", async () => {
-                  setReview(await getWriterReview(activeStudy));
-                });
-              }}
-            >
-              Load evidence bundle
-            </button>
-            {review ? (
-              <pre className="small preview-block">{JSON.stringify(review, null, 2).slice(0, 4000)}</pre>
-            ) : (
+            <h2>Пробелы в данных</h2>
+            {!gapsPanel ? (
               <EmptyState
-                title="Evidence не загружен"
-                why="Нет открытого review bundle для текущего study."
-                next="Загрузите пакет и выполните анализ, затем Load evidence bundle."
+                title="Пробелы не рассчитаны"
+                why="Сначала загрузите документы и выполните анализ пакета."
+                next="Перейдите к шагу «Документы» и нажмите «Анализировать пакет»."
+                actionLabel="Открыть Документы"
+                onAction={() => goTab("documents")}
+              />
+            ) : (
+              <GapsPanel
+                studyId={activeStudy}
+                gaps={gapsPanel.gaps}
+                counts={gapsPanel.counts}
+                resolved={gapsPanel.resolved}
+                reviewer={reviewer}
+                canApprove={canApproveDecisions}
+                busy={ops.decision.busy}
+                aiEnabled={
+                  props.aiEnabledOverride !== undefined
+                    ? props.aiEnabledOverride
+                    : Boolean(version?.ai_enabled)
+                }
+                activeSubstance={String(header.product || newMeta.product || "") || undefined}
+                onNotice={setNotice}
+                onRefresh={async () => {
+                  await refreshSlices(["gaps", "decisions", "engines", "progress", "core"]);
+                }}
+                onGoDecisions={() => goTab("decisions")}
               />
             )}
           </section>
         )}
 
-        {tab === "sample-size" && (
+        {tab === "decisions" && activeStudy && (
           <section className="panel">
-            <h2>Sample Size</h2>
+            <h2>Размер выборки</h2>
             {ssBlocked && (
               <>
-                <h3>Sample Size unavailable</h3>
-                <p className="muted">Причина:</p>
-                <ul>
-                  {((samplePanel?.blocking_reasons as string[]) || ["MISSING_VERIFIED_CVINTRA"]).map((b) => (
-                    <li key={b}>{humanLabel(b)}</li>
-                  ))}
-                </ul>
-                <button type="button" onClick={() => goTab("decisions")}>
-                  Resolve dependency
-                </button>
-                <EmptyState
-                  title="Нет sample size"
-                  why="Сначала утвердите необходимые design/variability inputs."
-                  next="Закройте блокеры в Решениях / Evidence."
-                  actionLabel="Resolve dependency"
-                  onAction={() => goTab("decisions")}
-                />
+                <p>
+                  Расчёт недоступен, пока нет подтверждённых входных данных.{" "}
+                  {humanReasons((samplePanel?.blocking_reasons as string[]) || ["MISSING_VERIFIED_CVINTRA"])}
+                </p>
+                <div className="header-actions">
+                  <button type="button" onClick={() => goTab("gaps")}>
+                    Открыть Пробелы
+                  </button>
+                </div>
               </>
+            )}
+            {ssBlocked && cvReady && (
+              <SampleSizeCalcForm
+                studyId={activeStudy}
+                reviewer={reviewer}
+                busy={ops.sampleSize.busy}
+                canApprove={canApproveDecisions}
+                design={String(header.design || "") || undefined}
+                onNotice={setNotice}
+                onRefresh={async () => {
+                  await refreshSlices(["engines", "gaps", "progress", "core"]);
+                }}
+              />
             )}
             {!ssBlocked && samplePanel && (
               <>
-                <p>Scenario / controlling: {humanLabel(samplePanel.controlling_parameter || samplePanel.scenario)}</p>
                 <p>
-                  Calculated N (recommendation): <strong>{String(samplePanel.calculated_n)}</strong>
+                  Рассчитанный размер выборки: <strong>{String(samplePanel.calculated_n)}</strong>{" "}
+                  {ssApproved ? "— утверждён" : "— это расчёт, а не утверждённое решение"}
                 </p>
-                <p>Assumptions: {humanLabel(samplePanel.assumptions || samplePanel.engine)}</p>
-                <p>Engine: {humanLabel(samplePanel.engine || samplePanel.method)}</p>
-                <p>
-                  Status: {humanLabel(samplePanel.status)}{" "}
-                  {ssApproved ? "(approved)" : "(not approved — recommendation only)"}
+                <p className="muted small">
+                  Определяющий параметр: {humanLabel(samplePanel.controlling_parameter || samplePanel.scenario)} ·
+                  метод: {humanLabel(samplePanel.engine || samplePanel.method)}
                 </p>
                 {ops.sampleSize.error && (
                   <div className="op-error" role="alert">
@@ -1619,11 +1669,10 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                     </button>
                   </div>
                 )}
-                <pre className="small">{JSON.stringify(samplePanel.scenarios || samplePanel.inputs || [], null, 2).slice(0, 2000)}</pre>
                 {!ssApproved && (
                   <div className="header-actions">
                     <button type="button" className="secondary" onClick={() => goTab("data")}>
-                      Review inputs
+                      Проверить входные данные
                     </button>
                     <button
                       type="button"
@@ -1637,12 +1686,12 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                             comment: "Approved from workspace",
                             project_to_study: false,
                           });
-                          setNotice("Sample size approved.");
-                          await refreshSlices(["engines", "progress", "core", "history"]);
+                          setNotice("Размер выборки утверждён.");
+                          await refreshSlices(["engines", "gaps", "progress", "core", "history"]);
                         });
                       }}
                     >
-                      Approve
+                      Утвердить размер выборки
                     </button>
                   </div>
                 )}
@@ -1651,85 +1700,79 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
           </section>
         )}
 
-        {tab === "statistics" && (
+        {tab === "decisions" && activeStudy && (
           <section className="panel">
-            <h2>Statistics</h2>
-            {primaryBeMissing && (
-              <>
+            <h2>Статистический план</h2>
+            {statsBlockingReasons.length > 0 && (
+              <p>{humanReasons(statsBlockingReasons)}</p>
+            )}
+            {statsNeedsExpertChoice && (
+              <StatisticsPlanForm
+                studyId={activeStudy}
+                reviewer={reviewer}
+                busy={ops.statistics.busy}
+                canApprove={canApproveDecisions}
+                currentParameters={statsCurrentPrimary}
+                onNotice={setNotice}
+                onRefresh={async () => {
+                  await refreshSlices(["engines", "gaps", "progress", "core", "history"]);
+                }}
+              />
+            )}
+            {statsPanel && statsPanel.is_approved ? (
+              <div>
                 <p>
-                  <strong>
-                    Выберите основной endpoint анализа биоэквивалентности (PRIMARY BE) в Решениях — автоматический
-                    выбор недоступен.
-                  </strong>
+                  План утверждён · версия{" "}
+                  {String(statsPanel.version ?? progressVersions.statistics_version ?? "—")}
                 </p>
-                {statsBlockingReasons.length > 0 && (
-                  <ul>
-                    {statsBlockingReasons.map((b) => (
-                      <li key={b}>{humanLabel(b)}</li>
-                    ))}
-                  </ul>
-                )}
-                <button type="button" onClick={() => goTab("decisions")}>
-                  Открыть Решения
-                </button>
-              </>
-            )}
-            {statsPanel && (
+                <p className="muted small">{String(statsPanel.recommendation_summary || "")}</p>
+              </div>
+            ) : null}
+            {statsPanel && !statsPanel.is_approved && !statsNeedsExpertChoice ? (
               <>
-                <p>Status: {humanLabel(statsPanel.status)}</p>
-                {statsPanel.is_approved ? (
-                  <div>
-                    <h3>APPROVED STATISTICAL PLAN</h3>
-                    <p>Version: {String(statsPanel.version ?? progressVersions.statistics_version ?? "—")}</p>
-                    <pre className="small preview-block">{JSON.stringify(statsPanel, null, 2).slice(0, 3000)}</pre>
+                <p className="muted small">{String(statsPanel.recommendation_summary || "")}</p>
+                {ops.statistics.error && (
+                  <div className="op-error" role="alert">
+                    {ops.statistics.error}{" "}
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setOps((p) => clearOpError(p, "statistics"))}
+                    >
+                      ✕
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    <p className="muted">Scenarios (не выбираются автоматически):</p>
-                    <pre className="small">{JSON.stringify(statsPanel.scenarios || [], null, 2).slice(0, 2500)}</pre>
-                    <p>{String(statsPanel.recommendation_summary || "")}</p>
-                    {ops.statistics.error && (
-                      <div className="op-error" role="alert">
-                        {ops.statistics.error}{" "}
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() => setOps((p) => clearOpError(p, "statistics"))}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
-                    <div className="header-actions">
-                      <button type="button" className="secondary" onClick={() => goTab("decisions")}>
-                        Review
-                      </button>
-                      <button
-                        type="button"
-                        disabled={ops.statistics.busy || !canApproveDecisions || !statsPanel.plan_id || Boolean(statsPanel.is_approved) || (Array.isArray(statsPanel.blocking_reasons) && (statsPanel.blocking_reasons as unknown[]).length > 0)}
-                        onClick={() => {
-                          void withOp("statistics", async () => {
-                            await approveStatisticsPlan(String(statsPanel.plan_id), {
-                              reviewer,
-                              comment: "Approved from workspace",
-                            });
-                            setNotice("Statistics plan approved.");
-                            await refreshSlices(["engines", "progress", "core", "history"]);
-                          });
-                        }}
-                      >
-                        Approve
-                      </button>
-                    </div>
-                  </>
                 )}
+                <div className="header-actions">
+                  <button
+                    type="button"
+                    disabled={
+                      ops.statistics.busy ||
+                      !canApproveDecisions ||
+                      !statsPanel.plan_id ||
+                      statsBlockingReasons.length > 0
+                    }
+                    onClick={() => {
+                      void withOp("statistics", async () => {
+                        await approveStatisticsPlan(String(statsPanel.plan_id), {
+                          reviewer,
+                          comment: "Approved from workspace",
+                        });
+                        setNotice("Статистический план утверждён.");
+                        await refreshSlices(["engines", "gaps", "progress", "core", "history"]);
+                      });
+                    }}
+                  >
+                    Утвердить план
+                  </button>
+                </div>
               </>
-            )}
-            {!statsPanel && primaryBeMissing && (
+            ) : null}
+            {!statsPanel && !statsNeedsExpertChoice && (
               <EmptyState
-                title="Нет statistics"
-                why="PRIMARY BE endpoint не выбран."
-                next="Откройте Решения и утвердите PRIMARY BE."
+                title="Плана ещё нет"
+                why="Статистический план строится после выбора основного endpoint и популяции анализа."
+                next="Заполните выбор эксперта выше — план пересчитается автоматически."
               />
             )}
           </section>
@@ -1760,28 +1803,53 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 <strong>{String(progressVersions.statistics_version ?? statsPanel?.version ?? "—")}</strong>
               </div>
               <div className="summary-card">
-                <div className="muted">Preflight status</div>
-                <strong>{humanLabel(preflight?.message || progressPreflight.message || "—")}</strong>
+                <div className="muted">Готовность к выгрузке</div>
+                <strong>
+                  {canGenerateDocx ? "Можно генерировать DOCX" : "Ещё есть незакрытые пункты"}
+                </strong>
               </div>
             </div>
             <div className="header-actions">
               <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={buildDraft}>
-                Build draft
+                Собрать черновик
               </button>
               <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={loadPreview}>
-                Preview
+                Предпросмотр
               </button>
               <button type="button" disabled={ops.preflight.busy || !activeStudy} onClick={runPreflight}>
-                Run preflight
+                Проверить готовность
               </button>
               <button
                 type="button"
                 disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || hasCriticalBlockers}
                 onClick={() => setShowDocxConfirm(true)}
               >
-                Generate DOCX
+                Сгенерировать DOCX
               </button>
             </div>
+
+            <h3>Что осталось сделать</h3>
+            {remainingWork.length === 0 ? (
+              <p>
+                {preflight || writerProgress
+                  ? "Незакрытых пунктов нет — протокол можно выгружать."
+                  : "Нажмите «Проверить готовность», чтобы увидеть список."}
+              </p>
+            ) : (
+              <div>
+                {remainingWork.map((b) => (
+                  <BlockerCard
+                    key={String(b.code)}
+                    what={String(b.what || b.code)}
+                    why={String(b.why || "—")}
+                    where={String(b.where || "—")}
+                    actionLabel={String(b.action_label || "Перейти")}
+                    severity={String(b.severity)}
+                    onResolve={() => goTab(String(b.tab || "overview"))}
+                  />
+                ))}
+              </div>
+            )}
 
             {showDocxConfirm && (
               <div className="docx-confirm">
@@ -1889,79 +1957,6 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 })}
               </div>
             )}
-          </section>
-        )}
-
-        {tab === "preflight" && (
-          <section className="panel">
-            <h2>Проверка (Final check)</h2>
-            <p>
-              {humanLabel(preflight?.message || progressPreflight.message || "Run preflight first")} · FINALIZE:{" "}
-              {String(preflight?.can_finalize ?? progressPreflight.can_finalize ?? false)} · DOCX:{" "}
-              {String(preflight?.can_generate_docx ?? progressPreflight.can_generate_docx ?? false)}
-            </p>
-            {!preflight && (
-              <EmptyState
-                title="Preflight не выполнен"
-                why="Нет результатов проверки."
-                next="Нажмите Run preflight на вкладке Протокол."
-                actionLabel="Run preflight"
-                onAction={runPreflight}
-              />
-            )}
-            {progressBlockers.length > 0 && (
-              <div>
-                <h3>Actionable blockers</h3>
-                {progressBlockers.map((b) => (
-                  <BlockerCard
-                    key={String(b.code)}
-                    what={String(b.what || b.code)}
-                    why={String(b.why || "—")}
-                    where={String(b.where || "—")}
-                    actionLabel={String(b.action_label || "Resolve")}
-                    severity={String(b.severity)}
-                    onResolve={() => goTab(String(b.tab || "overview"))}
-                  />
-                ))}
-              </div>
-            )}
-            <ul className="blocker-list">
-              {(
-                ((preflight?.critical_blockers as Array<Record<string, unknown>>) ||
-                  ((preflight?.checks as Array<Record<string, unknown>>) || []).filter((c) => !c.ok)) as Array<
-                  Record<string, unknown>
-                >
-              ).map((c) => {
-                const code = String(c.code || c.message || "");
-                let go: NavId = "decisions";
-                let goLabel = "Открыть Решения";
-                if (/SAMPLE|N_SUBJECT|SAMPLE_SIZE/i.test(code + String(c.message))) {
-                  go = "sample-size";
-                  goLabel = "Открыть Sample Size";
-                } else if (/STAT|PRIMARY_BE|AUC/i.test(code + String(c.message))) {
-                  go = "statistics";
-                  goLabel = "Открыть Statistics";
-                } else if (/EVIDENCE|RESEARCH/i.test(code + String(c.message))) {
-                  go = "evidence";
-                  goLabel = "Открыть Evidence";
-                } else if (/DOC|UPLOAD|PACKAGE/i.test(code + String(c.message))) {
-                  go = "documents";
-                  goLabel = "Открыть Документы";
-                }
-                return (
-                  <li key={code + String(c.message)}>
-                    <BlockerCard
-                      what={humanLabel(c.code) || "Blocker"}
-                      why={String(c.message || c.why || c.detail || "")}
-                      where={goLabel.replace("Открыть ", "")}
-                      actionLabel={goLabel}
-                      severity={String(c.severity || "CRITICAL")}
-                      onResolve={() => goTab(go)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
           </section>
         )}
 

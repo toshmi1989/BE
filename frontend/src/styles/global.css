@@ -905,8 +905,91 @@ button.secondary {
   background: #f5faf6;
 }
 
-.find-tmax-flow {
+.progress-step.current {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.gaps-panel {
+  display: block;
+}
+
+.gap-card {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.85rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.gap-card h3 {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.gap-manual-form,
+.engine-form {
   margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  background: #fbfbf9;
+}
+
+.gap-manual-form label,
+.engine-form label {
+  display: block;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.gap-manual-form input,
+.gap-manual-form select,
+.gap-manual-form textarea,
+.engine-form input,
+.engine-form select,
+.engine-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.gap-manual-form textarea,
+.engine-form textarea {
+  min-height: 3.5rem;
+}
+
+.engine-form fieldset {
+  border: 1px solid var(--line);
+  margin: 0 0 0.7rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.engine-form legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.engine-form .inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: auto;
+  margin: 0 0.9rem 0 0;
+}
+
+.engine-form .inline-check input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0 0.75rem;
 }
 
 .ai-proposal-box {

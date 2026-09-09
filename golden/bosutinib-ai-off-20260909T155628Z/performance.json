@@ -1,0 +1,15 @@
+{
+  "minimal_client_input_s": 0.24637200000142911,
+  "research_tasks_s": 0.060517400001117494,
+  "document_ingest_s": 0.06780769999750191,
+  "evidence_create_s": 0.02938439999707043,
+  "study_build_s": 0.11405809999996563,
+  "validation_s": 0.059186899998167064,
+  "protocol_assembly_s": 0.1936238000052981,
+  "docx_draft_s": 69.62639560000389,
+  "docx_review_s": 0.037108700002136175,
+  "docx_final_s": 0.03557680000085384,
+  "docx_draft_threshold_s": 30,
+  "docx_draft_exceeds_threshold": true,
+  "background_job_recommended": true
+}

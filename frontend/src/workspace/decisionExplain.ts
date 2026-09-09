@@ -5,40 +5,39 @@ export type BlockerExplain = {
   title: string;
   why: string;
   next: string;
-  nextTab?: "data" | "evidence" | "documents" | "decisions";
+  nextTab?: "data" | "gaps" | "documents" | "decisions";
 };
 
 const GAP_EXPLAIN: Record<string, Omit<BlockerExplain, "code">> = {
   MISSING_HALF_LIFE_FOR_WASHOUT: {
     title: "Нет периода полувыведения (t½)",
-    why: "Без t½ нельзя безопасно утвердить washout — это медицинский вход, а не UI-ограничение.",
-    next: "Найдите t½ в SmPC / источниках (вкладка Данные или Evidence) или запросите evidence.",
-    nextTab: "evidence",
+    why: "Без t½ нельзя рассчитать washout и терминальную фазу забора — это медицинский вход, а не ограничение интерфейса.",
+    next: "Шаг «Пробелы»: найдите t½ в источниках через ИИ или внесите значение с обоснованием.",
+    nextTab: "gaps",
   },
   MISSING_TMAX_FOR_SAMPLING: {
     title: "Нет ожидаемого (планового) Tmax",
-    why:
-      "Sampling design зависит от ожидаемого Tmax из SmPC/литературы. Без VERIFIED значения система не строит план «как будто Tmax известен». Весь протокол при этом не заморожен.",
-    next: "Нажмите «Найти Tmax»: Research → AI PROPOSAL → экспертная проверка → только тогда Sampling.",
-    nextTab: "evidence",
+    why: "Профиль забора строится вокруг ожидаемого Tmax из SmPC или литературы. Без подтверждённого значения план не строится «как будто Tmax известен», но остальные шаги протокола продолжаются.",
+    next: "Шаг «Пробелы»: поиск в источниках → предложение → ваше подтверждение → только тогда sampling.",
+    nextTab: "gaps",
   },
   MISSING_CVINTRA: {
     title: "Нет CVintra",
-    why: "Внутрииндивидуальная вариабельность нужна для sample size / статистики.",
-    next: "Укажите verified CVintra из литературы или Research Center.",
-    nextTab: "evidence",
+    why: "Внутрииндивидуальная вариабельность нужна для расчёта размера выборки и статистического плана.",
+    next: "Шаг «Пробелы»: найдите CVintra в публикациях или внесите значение для конкретного PK-параметра.",
+    nextTab: "gaps",
   },
   MISSING_ANALYTE: {
-    title: "Не указан analyte",
-    why: "Решение по PK/analyte требует идентифицированного вещества.",
-    next: "Проверьте извлечённые факты и источники по analyte.",
-    nextTab: "data",
+    title: "Не указан аналит",
+    why: "Решение по PK и биоаналитике требует определённого вещества.",
+    next: "Шаг «Пробелы»: укажите аналит либо проверьте извлечённые факты.",
+    nextTab: "gaps",
   },
   MISSING_MEAL_COMPOSITION: {
     title: "Нет состава приёма пищи",
-    why: "Для food-решения желателен meal composition (не всегда critical).",
-    next: "При необходимости уточните meal composition в источниках.",
-    nextTab: "data",
+    why: "Для описания fed-условий нужен стандартный состав приёма пищи.",
+    next: "Шаг «Пробелы»: найдите состав в рекомендациях или внесите вручную.",
+    nextTab: "gaps",
   },
 };
 
@@ -119,9 +118,9 @@ export function explainBlocker(raw: unknown): BlockerExplain {
   return {
     code: code || "BLOCKER",
     title: msg || (code ? humanizeCode(code) : "Есть ограничение"),
-    why: msg || "Система требует закрыть зависимость перед утверждением.",
-    next: "Откройте детали решения: Blockers / Evidence, затем Request evidence или внесите данные.",
-    nextTab: "evidence",
+    why: msg || "Перед утверждением нужно закрыть зависимость.",
+    next: "Откройте детали решения и посмотрите, каких входных данных не хватает.",
+    nextTab: "gaps",
   };
 }
 
@@ -155,9 +154,9 @@ export function explainDecisionBlockers(decision: Record<string, unknown>): Bloc
     out.push({
       code: "BLOCKED",
       title: "Решение заблокировано",
-      why: "Не хватает обязательных входов или есть незакрытые зависимости.",
-      next: "Откройте карточку → Blockers. Обычно нужны t½, Tmax или закрытие конфликта.",
-      nextTab: "evidence",
+      why: "Не хватает обязательных входных данных или есть незакрытая зависимость.",
+      next: "Чаще всего нужны t½, Tmax или закрытие конфликта — смотрите шаг «Пробелы».",
+      nextTab: "gaps",
     });
   }
   return out;
