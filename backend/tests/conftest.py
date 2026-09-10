@@ -19,6 +19,10 @@ def _reset_ai_runtime():
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    from app.domain.workspace_authority import invalidate_study_cache
+
+    # The API gets a fresh DB per test; the process-local working set must match it.
+    invalidate_study_cache("*")
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("AI_ENABLED", "false")
     get_settings.cache_clear()

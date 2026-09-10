@@ -1577,14 +1577,29 @@ export async function listStudyGaps(studyId: string): Promise<GapsPanel> {
   };
 }
 
+export type GapSource = { title: string | null; url: string | null; source_type: string | null };
+
+export type GapResearchResult = {
+  code: string;
+  research_task_id: string | null;
+  provider: string | null;
+  /** OK | SOURCES_ONLY | NOTHING_FOUND | SEARCH_FAILED | SEARCH_UNAVAILABLE */
+  status: string;
+  found: number;
+  awaiting_verification: number;
+  sources: GapSource[];
+  message: string | null;
+  gap: StudyGap | null;
+};
+
 export function researchStudyGap(
   studyId: string,
   code: string,
   body?: { active_substance?: string; dosage_form?: string; dose?: string; use_mock_provider?: boolean },
 ) {
-  return request<Record<string, unknown>>(`/api/studies/${studyId}/gaps/${code}/research`, {
+  return request<GapResearchResult>(`/api/studies/${studyId}/gaps/${code}/research`, {
     method: "POST",
-    body: JSON.stringify(body || { use_mock_provider: true }),
+    body: JSON.stringify(body || {}),
   });
 }
 

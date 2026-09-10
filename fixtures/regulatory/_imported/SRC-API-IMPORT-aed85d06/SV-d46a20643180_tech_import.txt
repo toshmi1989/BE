@@ -1,0 +1,14 @@
+TECHNICAL_FIXTURE_ONLY — NOT an official regulatory document.
+
+This file exists solely to exercise the Phase 13.2 import → page → claim → review pipeline.
+
+It must never be labeled as Decision 85, FDA, EMA, or SmPC verification.
+
+Sample lines for extraction:
+- Page-oriented ingestion stores human-facing page numbers starting at 1.
+- Exact excerpt text is required before a claim can be VERIFIED.
+- HIGH extraction confidence does not imply VERIFIED status.
+- KnowledgeRule candidates created from claims remain PROPOSED.
+- Study / Design / Sampling / PK / Safety / ReferenceProduct are not mutated by import or verify.
+
+import-api-7bed9962a1704bfcb123c507a661d699

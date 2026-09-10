@@ -164,6 +164,57 @@ def test_cvintra_needs_pk_parameter_then_feeds_sample_size(study):
     assert "CV_PROPOSED_NOT_ALLOWED" not in rec.blocking_reasons
 
 
+def test_only_a_stated_meal_composition_becomes_a_proposal(study):
+    """A source that just says "high-calorie breakfast" gives the engine nothing."""
+    from app.domain.research_evidence_engine import create_tasks_from_gaps, run_research_task, verify_claim
+    from app.domain.research_provider import ProviderHit, ResearchProvider
+    from app.domain.workspace_gaps import apply_verified_evidence
+
+    class _Provider(ResearchProvider):
+        kind = "WEB"
+
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def search(self, query, *, query_type=None):
+            return [
+                ProviderHit(
+                    title="Fed BE study conditions",
+                    locator="https://example.test/meal",
+                    source_type="PUBLICATION",
+                    text=self.text,
+                )
+            ]
+
+    def _run(text: str):
+        task = create_tasks_from_gaps(
+            STUDY, [{"code": "MISSING_MEAL_COMPOSITION", "title": "meal"}]
+        )[0]
+        run_research_task(task.id, provider=_Provider(text), register_sources=False)
+        return _gap(collect_study_gaps(STUDY), "MISSING_MEAL_COMPOSITION")
+
+    vague = _run("Subjects received a high-calorie breakfast before dosing.")
+    assert vague is not None
+    assert vague["proposals"] == []
+
+    stated = _run(
+        "Subjects received a high-calorie breakfast of approximately 950 kcal with 55% fat."
+    )
+    assert stated["status"] == "PROPOSED"
+    proposal = next(p for p in stated["proposals"] if p["value"] == 950)
+
+    verify_claim(
+        proposal["claim_id"],
+        reviewer="writer@example.com",
+        applicability="DIRECT",
+        applicability_reason="Условия применимы к этому исследованию",
+    )
+    applied = apply_verified_evidence(STUDY)
+    assert "food.calorie_target" in applied["applied_fields"]
+    assert get_context(STUDY).structured_facts["food.calorie_target"] == 950
+    assert _gap(collect_study_gaps(STUDY), "MISSING_MEAL_COMPOSITION") is None
+
+
 def test_statistics_gaps_are_expert_decisions_not_manual_values(study):
     for code in ("MISSING_PRIMARY_BE_SELECTION", "MISSING_ANALYSIS_POPULATION_RULE"):
         with pytest.raises(ValueError, match="Решения"):

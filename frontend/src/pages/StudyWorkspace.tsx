@@ -1602,12 +1602,9 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 reviewer={reviewer}
                 canApprove={canApproveDecisions}
                 busy={ops.decision.busy}
-                aiEnabled={
-                  props.aiEnabledOverride !== undefined
-                    ? props.aiEnabledOverride
-                    : Boolean(version?.ai_enabled)
-                }
                 activeSubstance={String(header.product || newMeta.product || "") || undefined}
+                dosageForm={String(header.dosage_form || "") || undefined}
+                dose={String(header.dose || newMeta.dose || "") || undefined}
                 onNotice={setNotice}
                 onRefresh={async () => {
                   await refreshSlices(["gaps", "decisions", "engines", "progress", "core"]);

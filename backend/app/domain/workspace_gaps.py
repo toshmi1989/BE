@@ -146,19 +146,23 @@ DOMAIN_LABELS_RU: dict[str, str] = {
 
 CV_FIELD_ALIASES: frozenset[str] = frozenset({"cv_intra", "cvintra", "statistics.cvintra"})
 
+# One gap, several field names used by extraction and by the engines
+CLAIM_FIELD_ALIASES: dict[str, frozenset[str]] = {
+    "cv_intra": CV_FIELD_ALIASES,
+    "pk.Tmax": frozenset({"pk.Tmax", "pk.expected_tmax"}),
+    "pk.t_half": frozenset({"pk.t_half", "pk.expected_t_half"}),
+    "food.calorie_target": frozenset({"food.calorie_target", "food.fat_target"}),
+}
+
 
 def _claim_matches(meta: dict[str, Any], claim: ResearchClaim) -> bool:
     field = meta.get("claim_field")
     if not field:
         return False
+    if field == "cv_intra" and claim.cvintra:
+        return True
     fp = str(claim.field_path or "")
-    if field == "cv_intra":
-        return fp in CV_FIELD_ALIASES or bool(claim.cvintra)
-    if field == "pk.Tmax":
-        return fp in {"pk.Tmax", "pk.expected_tmax"}
-    if field == "pk.t_half":
-        return fp in {"pk.t_half", "pk.expected_t_half"}
-    return fp == field
+    return fp in CLAIM_FIELD_ALIASES.get(field, frozenset({field}))
 
 
 def _proposal(claim: ResearchClaim) -> dict[str, Any]:
@@ -180,6 +184,14 @@ def _proposal(claim: ResearchClaim) -> dict[str, Any]:
         "extraction_method": claim.extraction_method,
         "pk_parameter": (claim.cvintra or {}).get("PK_parameter"),
     }
+
+
+def count_gap_proposals(study_id: str, code: str) -> int:
+    """Proposals already attached to this gap — lets a search report what it added."""
+    meta = GAP_CATALOG.get(CANONICAL_ALIASES.get(code, code))
+    if meta is None:
+        return 0
+    return sum(1 for c in list_claims(study_id=study_id) if _claim_matches(meta, c))
 
 
 def _statistics_gap_codes(study_id: str) -> list[str]:

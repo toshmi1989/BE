@@ -207,6 +207,22 @@ def test_c06_parse_ddg_html():
     rows = parse_duckduckgo_html(html)
     assert rows
     assert "example.com" in rows[0]["url"]
+    assert rows[0]["snippet"] == "half-life snippet"
+
+
+def test_c06b_ddg_snippets_stay_with_their_result():
+    """Without the snippet there is nothing to extract a value from."""
+    html = """
+    <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.test%2F1">First</a>
+    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.test%2F1">
+      <b>Tmax</b> was 2-4 hours after dosing</a>
+    <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fb.test%2F2">Second</a>
+    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fb.test%2F2">t1/2 = 9.5 h</a>
+    """
+    rows = parse_duckduckgo_html(html)
+    assert [r["url"] for r in rows] == ["https://a.test/1", "https://b.test/2"]
+    assert rows[0]["snippet"] == "Tmax was 2-4 hours after dosing"
+    assert rows[1]["snippet"] == "t1/2 = 9.5 h"
 
 
 def test_c07_classify_smpc():

@@ -48,10 +48,19 @@ def extract_claims_from_hit(
     return [c for c in claims if c is not None]
 
 
-def _half_life_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
+def _half_life_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | None:
     stat = meta.get("statistic") or "UNKNOWN"
     value = meta.get("value")
     rlow, rhigh = meta.get("range_low"), meta.get("range_high")
+    from_text = False
+    if value is None and rlow is None:
+        parsed = _hours_from_text(text, _HALF_LIFE_LABEL)
+        if parsed is None:
+            # A source that only mentions half-life carries no value to propose
+            return None
+        stat, value = parsed["statistic"], parsed["value"]
+        rlow, rhigh = parsed["range_low"], parsed["range_high"]
+        from_text = True
     # Do not collapse range into a single number
     if stat == "RANGE" or (rlow is not None and rhigh is not None and value is None):
         value = None
@@ -96,10 +105,18 @@ def _half_life_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchCla
     )
 
 
-def _tmax_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
+def _tmax_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | None:
     stat = meta.get("statistic") or "UNKNOWN"
     value = meta.get("value")
     rlow, rhigh = meta.get("range_low"), meta.get("range_high")
+    from_text = False
+    if value is None and rlow is None:
+        parsed = _hours_from_text(text, _TMAX_LABEL)
+        if parsed is None:
+            return None
+        stat, value = parsed["statistic"], parsed["value"]
+        rlow, rhigh = parsed["range_low"], parsed["range_high"]
+        from_text = True
     # Preserve range; do not auto-mean
     meas = EvidenceMeasurement(
         parameter="Tmax",
@@ -138,7 +155,7 @@ def _tmax_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
     )
 
 
-def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
+def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | None:
     var = meta.get("variability_type") or (
         "BETWEEN_SUBJECT"
         if re.search(r"between[- ]subject", text, re.I)
@@ -149,8 +166,14 @@ def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
     )
     if pk not in {"Cmax", "AUC", "AUC0-t", "AUC0-inf", "Tmax", "t_half", "OTHER"}:
         pk = "OTHER"
+    cv_value = meta.get("CV_value")
+    if cv_value is None:
+        cv_value = _percent_near_cv(text)
+        if cv_value is None:
+            # Nothing to propose: the source names CV without stating it
+            return None
     cv = CVintraEvidence(
-        CV_value=meta.get("CV_value"),
+        CV_value=cv_value,
         CV_unit=meta.get("CV_unit") or "%",
         PK_parameter=pk,
         variability_type=var,
@@ -190,11 +213,29 @@ def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
     )
 
 
+_KCAL_RE = re.compile(
+    r"(\d{3,4})\s*(?:[-–—]|to|до)?\s*(\d{3,4})?\s*(?:kcal|kcals|ккал|calories|калори)",
+    re.I,
+)
+_FAT_RE = re.compile(
+    r"(?:(\d{1,2})\s*%[^.]{0,30}?fat|fat[^.\d]{0,30}?(\d{1,2})\s*%)",
+    re.I,
+)
+
+
 def _meal_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
     desc = meta.get("meal_description")
-    # Do not invent kcal/fat
+    # Read kcal/fat only if the source states them — never invent a composition
     calories = meta.get("calories")
     fat = meta.get("fat")
+    if calories is None:
+        m = _KCAL_RE.search(text)
+        if m:
+            calories = f"{m.group(1)}–{m.group(2)}" if m.group(2) else int(m.group(1))
+    if fat is None:
+        m = _FAT_RE.search(text)
+        if m:
+            fat = int(m.group(1) or m.group(2))
     if not desc and not calories and not fat:
         desc = "high-calorie breakfast" if "high-calorie" in text.lower() else None
     claim = desc or text[:120]
@@ -210,8 +251,10 @@ def _meal_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim:
     return ResearchClaim(
         claim_text=str(claim),
         research_task_id=task_id,
-        field_path="food.meal_description",
-        value=desc,
+        # Only a stated kcal figure is the value the food engine can use
+        field_path="food.calorie_target" if calories is not None else "food.meal_description",
+        value=calories if calories is not None else desc,
+        unit="kcal" if calories is not None else None,
         source_id=sr.registered_source_id,
         source_version_id=sr.registered_source_version_id,
         source_result_id=sr.id,
@@ -260,6 +303,57 @@ def _format_half_life(m: EvidenceMeasurement) -> str:
     if m.statistic_type == "RANGE":
         return f"t½ range {m.range_low}-{m.range_high} {m.unit}"
     return f"t½ {m.statistic_type.lower()}={m.value} {m.unit}"
+
+
+_NUM = r"(\d{1,3}(?:[.,]\d+)?)"
+_HOURS = r"(?:h\b|hr?s?\b|hours?\b|ч\b|час[а-я]*)"
+_HALF_LIFE_LABEL = r"(?:t\s*1\s*/\s*2|t½|half[-\s]?li(?:fe|ves)|период\s+полувыведения)"
+_TMAX_LABEL = r"(?:t\s*max|время\s+достижения\s+максимальной\s+концентрации)"
+# The value must stay in the same clause as its label, so the gap excludes . ; and digits
+_GAP = r"[^0-9.;\n]{0,25}?"
+
+
+def _statistic_near(text: str, start: int) -> str:
+    lead = text[max(0, start - 40) : start].lower()
+    if "median" in lead or "медиан" in lead:
+        return "MEDIAN"
+    if "geometric" in lead:
+        return "GEOMETRIC_MEAN"
+    if "mean" in lead or "средн" in lead:
+        return "MEAN"
+    return "UNKNOWN"
+
+
+def _as_number(raw: str) -> float:
+    return float(raw.replace(",", "."))
+
+
+def _hours_from_text(text: str, label: str) -> dict[str, Any] | None:
+    """Read a value in hours stated next to its label. Returns None if not stated."""
+    rng = re.search(label + _GAP + _NUM + r"\s*(?:[-–—]|to|до)\s*" + _NUM + r"\s*" + _HOURS, text, re.I)
+    if rng:
+        return {
+            "statistic": "RANGE",
+            "value": None,
+            "range_low": _as_number(rng.group(1)),
+            "range_high": _as_number(rng.group(2)),
+        }
+    point = re.search(label + _GAP + _NUM + r"\s*" + _HOURS, text, re.I)
+    if point:
+        return {
+            "statistic": _statistic_near(text, point.start()),
+            "value": _as_number(point.group(1)),
+            "range_low": None,
+            "range_high": None,
+        }
+    return None
+
+
+def _percent_near_cv(text: str) -> float | None:
+    m = re.search(r"CV[^0-9%\n]{0,25}?(\d{1,2}(?:[.,]\d+)?)\s*%", text, re.I) or re.search(
+        r"(\d{1,2}(?:[.,]\d+)?)\s*%[^.;\n]{0,25}?CV", text, re.I
+    )
+    return _as_number(m.group(1)) if m else None
 
 
 def _infer_population(text: str) -> str | None:

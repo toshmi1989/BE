@@ -431,6 +431,42 @@ def test_j02_tmax_range_not_mean():
     assert claims[0].measurement["statistic_type"] == "RANGE"
 
 
+def _claims_for(text: str, locator: str = "https://example.test/pk"):
+    hit = ProviderHit(title="Web result", locator=locator, source_type="PUBLICATION", text=text)
+    sr = SourceResult(research_task_id="t", provider="WEB", title="r", url_or_source_locator=locator)
+    return extract_claims_from_hit(hit, research_task_id="t", source_result=sr, context=CTX)
+
+
+def test_j03_values_are_read_from_source_text():
+    """Web results carry no metadata — the number must come from the snippet."""
+    by_field = {
+        c.field_path: c
+        for c in _claims_for("Median Tmax was 2-4 hours and t1/2 = 9.5 h after a single 15 mg dose.")
+    }
+    assert by_field["pk.Tmax"].measurement["range_low"] == 2.0
+    assert by_field["pk.Tmax"].measurement["range_high"] == 4.0
+    assert by_field["pk.t_half"].value == 9.5
+    assert by_field["pk.t_half"].verification_status == "PROPOSED"
+
+
+def test_j04_no_number_in_source_means_no_claim():
+    """Naming a parameter is not stating its value — nothing to propose."""
+    claims = _claims_for("Pharmacokinetic parameters included Cmax, Tmax, half-life and AUC.")
+    assert [c for c in claims if c.field_path in {"pk.Tmax", "pk.t_half"}] == []
+
+
+def test_j05_hours_far_from_the_label_are_not_taken_as_the_value():
+    claims = _claims_for("Tmax and AUC were assessed over a sampling period of 24 hours.")
+    assert [c for c in claims if c.field_path == "pk.Tmax"] == []
+
+
+def test_j06_cv_percent_read_from_text():
+    claims = [c for c in _claims_for("Within-subject CV for Cmax was 22% in a 2x2 crossover.") if c.cvintra]
+    assert claims
+    assert claims[0].cvintra["CV_value"] == 22.0
+    assert claims[0].cvintra["variability_type"] == "WITHIN_SUBJECT"
+
+
 # ---------------------------------------------------------------------------
 # K. Meal composition
 # ---------------------------------------------------------------------------

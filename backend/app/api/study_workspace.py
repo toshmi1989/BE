@@ -850,7 +850,7 @@ class GapResearchIn(BaseModel):
     active_substance: str | None = None
     dosage_form: str | None = None
     dose: str | None = None
-    use_mock_provider: bool = True
+    use_mock_provider: bool | None = None
     package_id: str | None = None
 
 
@@ -862,14 +862,39 @@ class GapVerifyIn(BaseModel):
     package_id: str | None = None
 
 
-def _gap_or_404(study_id: str, code: str, package_id: str | None) -> dict[str, Any]:
+def _gaps_panel(db: Session, study_id: str, package_id: str | None) -> dict[str, Any]:
+    """Read the panel after a mutation: after_mutation drops the process cache."""
     from app.domain.workspace_gaps import collect_study_gaps
 
-    panel = collect_study_gaps(study_id, package_id=package_id)
-    for g in panel["gaps"]:
-        if g["code"] == code:
-            return g
-    raise HTTPException(status_code=404, detail=f"Пробел {code} не найден для исследования")
+    ensure_db_authoritative(db, study_id)
+    return collect_study_gaps(study_id, package_id=package_id)
+
+
+def _search_provider(payload: GapResearchIn):
+    """Pick the provider server-side. Mock only when the caller asks for it.
+
+    Returns (provider, unavailable_message). A None provider means the search
+    cannot run at all — the writer must be told, not left with a silent button.
+    """
+    from app.domain.research_http import research_http_settings
+    from app.domain.research_mock_provider import MockResearchProvider
+    from app.domain.research_real_web import RealWebResearchProvider
+
+    if payload.use_mock_provider:
+        return MockResearchProvider(), None
+    if not research_http_settings()["enabled"]:
+        return None, (
+            "Поиск в открытых источниках отключён на сервере "
+            "(research_web_enabled=false). Внесите значение вручную."
+        )
+    return RealWebResearchProvider(), None
+
+
+PROVIDER_LABEL_RU: dict[str, str] = {
+    "MOCK": "демонстрационный набор источников",
+    "WEB": "поиск в открытых источниках",
+    "LOCAL_DOCUMENTS": "только загруженные документы",
+}
 
 
 @router.get("/studies/{study_id}/gaps")
@@ -896,12 +921,9 @@ def research_study_gap(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Search open sources for a missing value. Result stays PROPOSED until verified."""
-    from app.domain.research_evidence_engine import (
-        create_tasks_from_gaps,
-        default_provider,
-        run_research_task,
-    )
-    from app.domain.workspace_gaps import GAP_CATALOG, RESEARCH, collect_study_gaps
+    from app.domain.research_evidence_engine import create_tasks_from_gaps, run_research_task
+    from app.domain.research_http import ResearchHttpError
+    from app.domain.workspace_gaps import GAP_CATALOG, RESEARCH, count_gap_proposals
 
     payload = payload or GapResearchIn()
     auth = _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
@@ -915,6 +937,23 @@ def research_study_gap(
             status_code=422,
             detail=f"«{meta['title']}» не ищется в источниках — это экспертное решение",
         )
+
+    provider, unavailable = _search_provider(payload)
+    if provider is None:
+        panel = _gaps_panel(db, study_id, payload.package_id)
+        return {
+            "code": code,
+            "research_task_id": None,
+            "provider": None,
+            "status": "SEARCH_UNAVAILABLE",
+            "found": 0,
+            "awaiting_verification": 0,
+            "sources": [],
+            "message": unavailable,
+            "gap": next((g for g in panel["gaps"] if g["code"] == code), None),
+            "auto_verified": False,
+            "study_mutated": False,
+        }
 
     tasks = create_tasks_from_gaps(
         study_id,
@@ -930,30 +969,86 @@ def research_study_gap(
     if not tasks:
         raise HTTPException(status_code=422, detail="Не удалось создать исследовательскую задачу")
     task = tasks[0]
-    run_research_task(
-        task.id,
-        provider=default_provider(use_mock=payload.use_mock_provider),
-        context={
-            "active_substance": payload.active_substance,
-            "analyte": payload.active_substance,
-            "dose": payload.dose,
-            "dosage_form": payload.dosage_form,
-        },
-    )
+    where = PROVIDER_LABEL_RU.get(provider.kind, provider.kind)
+    context = {
+        "active_substance": payload.active_substance,
+        "analyte": payload.active_substance,
+        "dose": payload.dose,
+        "dosage_form": payload.dosage_form,
+    }
+    before = count_gap_proposals(study_id, code)
+    status = "OK"
+    message: str | None = None
+    sources: list[dict[str, Any]] = []
+
+    if provider.kind == "WEB":
+        # Real path: registers sources, extracts from snippets, reports its own status
+        from app.domain.research_real_search import run_real_search
+
+        out = run_real_search(task.id, provider=provider, extras=context)
+        sources = [
+            {
+                "title": r.get("title"),
+                "url": r.get("url"),
+                "source_type": r.get("source_type"),
+            }
+            for r in (out.get("results") or [])[:8]
+        ]
+        if str(out.get("status")) == "RESEARCH_FAILED":
+            status = "SEARCH_FAILED"
+            message = (
+                f"Поиск не удался: {'; '.join(out.get('errors') or ['внешние источники недоступны'])}. "
+                "Значение можно внести вручную."
+            )
+    else:
+        try:
+            run_research_task(task.id, provider=provider, context=context)
+        except ResearchHttpError as exc:
+            status = "SEARCH_FAILED"
+            message = (
+                f"Поиск не удался ({exc.kind}): внешние источники недоступны. "
+                "Значение можно внести вручную."
+            )
+
     append_audit(
         study_id,
         event="GAP_RESEARCH_RUN",
         who=auth.email if auth else "writer",
         what=code,
-        reason="Поиск недостающего значения в открытых источниках",
-        new_value={"research_task_id": task.id},
+        reason=f"Поиск недостающего значения: {where}",
+        new_value={"research_task_id": task.id, "provider": provider.kind, "status": status},
     )
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
-    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    panel = _gaps_panel(db, study_id, payload.package_id)
     gap = next((g for g in panel["gaps"] if g["code"] == code), None)
+    awaiting = len(gap["proposals"]) if gap else 0
+    found = max(awaiting - before, 0)
+    if status == "OK":
+        if found:
+            message = f"{where}: новых предложений — {found}. Нужна проверка эксперта."
+        elif sources:
+            status = "SOURCES_ONLY"
+            message = (
+                f"Нашли источников: {len(sources)}, но значение из выдачи извлечь не удалось. "
+                "Откройте источник и внесите значение вручную."
+            )
+        else:
+            status = "NOTHING_FOUND"
+            message = (
+                f"{where}: пригодных значений не нашли. Платформа ничего не подставляет — "
+                "внесите значение вручную с указанием источника."
+            )
+        if not found and awaiting:
+            message += f" Ранее найденные предложения ждут проверки: {awaiting}."
     return {
         "code": code,
         "research_task_id": task.id,
+        "provider": provider.kind,
+        "status": status,
+        "found": found,
+        "awaiting_verification": awaiting,
+        "sources": sources,
+        "message": message,
         "gap": gap,
         "auto_verified": False,
         "study_mutated": False,
@@ -970,7 +1065,7 @@ def verify_study_gap(
 ) -> dict[str, Any]:
     """Expert confirms a proposed value. Only then do dependent steps use it."""
     from app.domain.research_evidence_engine import verify_claim
-    from app.domain.workspace_gaps import apply_verified_evidence, collect_study_gaps
+    from app.domain.workspace_gaps import apply_verified_evidence
 
     auth = _auth_for_study(
         study_id, permission="approve_decisions", authorization=authorization, db=db
@@ -1004,7 +1099,7 @@ def verify_study_gap(
         reason=payload.applicability_reason or "Экспертное подтверждение значения",
     )
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
-    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    panel = _gaps_panel(db, study_id, payload.package_id)
     return {
         "code": code,
         "claim": claim.to_dict(),
@@ -1025,7 +1120,7 @@ def resolve_study_gap_manually(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Expert enters a missing value directly, with a rationale. Never silent."""
-    from app.domain.workspace_gaps import collect_study_gaps, resolve_gap_manually
+    from app.domain.workspace_gaps import resolve_gap_manually
 
     auth = _auth_for_study(
         study_id, permission="approve_decisions", authorization=authorization, db=db
@@ -1056,7 +1151,7 @@ def resolve_study_gap_manually(
         reason=payload.rationale,
     )
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
-    panel = collect_study_gaps(study_id, package_id=payload.package_id)
+    panel = _gaps_panel(db, study_id, payload.package_id)
     return {**result, "gaps": panel["gaps"], "counts": panel["counts"]}
 
 

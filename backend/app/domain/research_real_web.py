@@ -23,8 +23,13 @@ SearchFn = Callable[[str], list[dict[str, Any]]]
 
 
 _RESULT_RE = re.compile(
-    r'class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>'
-    r'.*?(?:class="result__snippet"[^>]*>(?P<snippet>.*?)</(?:a|td|div)>)?',
+    r'class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+    re.I | re.S,
+)
+# The snippet sits in its own tag after the title; a single combined pattern with an
+# optional trailing group matches empty and silently loses every snippet.
+_SNIPPET_RE = re.compile(
+    r'class="result__snippet"[^>]*>(?P<snippet>.*?)</(?:a|td|div)>',
     re.I | re.S,
 )
 _UDDG_RE = re.compile(r"[?&]uddg=([^&]+)")
@@ -38,11 +43,19 @@ def _unwrap_ddg_url(href: str) -> str:
 
 
 def parse_duckduckgo_html(html_text: str) -> list[dict[str, Any]]:
+    text = html_text or ""
+    titles = list(_RESULT_RE.finditer(text))
+    snippets = list(_SNIPPET_RE.finditer(text))
     results: list[dict[str, Any]] = []
-    for m in _RESULT_RE.finditer(html_text or ""):
+    for idx, m in enumerate(titles):
+        block_end = titles[idx + 1].start() if idx + 1 < len(titles) else len(text)
+        raw_snippet = next(
+            (s.group("snippet") for s in snippets if m.end() <= s.start() < block_end),
+            "",
+        )
         href = _unwrap_ddg_url(m.group("href"))
         title = sanitize_title(m.group("title"))
-        snippet = sanitize_snippet(m.group("snippet") or "")
+        snippet = sanitize_snippet(raw_snippet)
         try:
             url = sanitize_url(href)
         except ValueError:

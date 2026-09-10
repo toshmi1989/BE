@@ -69,6 +69,29 @@ def apply_verified_research_to_context(
             ctx.knowledge_gaps = [
                 g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_TMAX_FOR_SAMPLING"
             ]
+        elif c.field_path in {"food.calorie_target", "food.fat_target"}:
+            meas = c.measurement or {}
+            composition = meas.get("value") if isinstance(meas.get("value"), dict) else {}
+            calories = composition.get("calories", c.value if c.field_path == "food.calorie_target" else None)
+            fat = composition.get("fat", c.value if c.field_path == "food.fat_target" else None)
+            if calories is None and fat is None:
+                # A meal description alone is not the composition the engine needs
+                continue
+            if calories is not None:
+                ctx.structured_facts["food.calorie_target"] = calories
+                ctx.fact_statuses["food.calorie_target"] = "VERIFIED"
+                ctx.fact_sources["food.calorie_target"] = "RESEARCH_EVIDENCE"
+                applied.append("food.calorie_target")
+            if fat is not None:
+                ctx.structured_facts["food.fat_target"] = fat
+                ctx.fact_statuses["food.fat_target"] = "VERIFIED"
+                ctx.fact_sources["food.fat_target"] = "RESEARCH_EVIDENCE"
+                applied.append("food.fat_target")
+            if composition.get("description"):
+                ctx.structured_facts["food.meal_description"] = composition["description"]
+            ctx.knowledge_gaps = [
+                g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_MEAL_COMPOSITION"
+            ]
         elif c.field_path == "cv_intra" and c.cvintra and c.cvintra.get("is_cvintra"):
             if can_unblock_decision(c, domain="DESIGN"):
                 ctx.cvintra = c.cvintra.get("CV_value")
@@ -99,6 +122,8 @@ def recompute_affected_decisions(
             domains.add("SAMPLING")
         if fp == "cv_intra":
             domains.add("DESIGN")
+        if fp in {"food.calorie_target", "food.fat_target"}:
+            domains.add("FOOD")
     if not domains:
         return {
             "recomputed_domains": [],

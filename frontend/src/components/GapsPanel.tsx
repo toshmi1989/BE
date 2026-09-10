@@ -5,6 +5,7 @@ import {
   resolveStudyGapManually,
   verifyStudyGap,
   type GapProposal,
+  type GapSource,
   type StudyGap,
 } from "../api/client";
 
@@ -39,9 +40,9 @@ export type GapsPanelProps = {
   reviewer: string;
   canApprove: boolean;
   busy: boolean;
-  aiEnabled?: boolean;
   activeSubstance?: string;
   dosageForm?: string;
+  dose?: string;
   onNotice: (msg: string) => void;
   onRefresh: () => Promise<void>;
   onGoDecisions: () => void;
@@ -56,9 +57,9 @@ export function GapsPanel(props: GapsPanelProps) {
     reviewer,
     canApprove,
     busy,
-    aiEnabled = false,
     activeSubstance,
     dosageForm,
+    dose,
     onNotice,
     onRefresh,
     onGoDecisions,
@@ -66,6 +67,9 @@ export function GapsPanel(props: GapsPanelProps) {
 
   const [localBusy, setLocalBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchInfo, setSearchInfo] = useState<
+    Record<string, { status: string; message: string; sources: GapSource[] }>
+  >({});
   const [manualFor, setManualFor] = useState<string | null>(null);
   const [manual, setManual] = useState<{ value: string; rationale: string; pk: string }>({
     value: "",
@@ -86,6 +90,23 @@ export function GapsPanel(props: GapsPanelProps) {
     } finally {
       setLocalBusy(null);
     }
+  }
+
+  async function search(gap: StudyGap, useDemoSources: boolean) {
+    await run(gap.code, async () => {
+      const res = await researchStudyGap(studyId, gap.code, {
+        active_substance: activeSubstance,
+        dosage_form: dosageForm,
+        dose,
+        ...(useDemoSources ? { use_mock_provider: true } : {}),
+      });
+      const message = res.message || `Поиск выполнен, найдено предложений: ${res.found}`;
+      setSearchInfo((prev) => ({
+        ...prev,
+        [gap.code]: { status: res.status, message, sources: res.sources || [] },
+      }));
+      onNotice(`${gap.title}: ${message}`);
+    });
   }
 
   function startManual(gap: StudyGap) {
@@ -144,6 +165,8 @@ export function GapsPanel(props: GapsPanelProps) {
         const canManual = gap.resolution.includes("MANUAL");
         const expertOnly = gap.resolution.includes("EXPERT_DECISION");
         const thisBusy = localBusy === gap.code;
+        const info = searchInfo[gap.code];
+        const emptySearch = Boolean(info) && info.status !== "OK" && gap.proposals.length === 0;
 
         return (
           <article className="gap-card" key={gap.code}>
@@ -219,23 +242,40 @@ export function GapsPanel(props: GapsPanelProps) {
               </div>
             )}
 
+            {info && (
+              <p className={info.status === "OK" ? "muted small" : "op-error small"}>{info.message}</p>
+            )}
+            {info && info.sources.length > 0 && (
+              <details className="small">
+                <summary>Источники из поиска ({info.sources.length})</summary>
+                <ul>
+                  {info.sources.map((s) => (
+                    <li key={String(s.url)}>
+                      <a href={String(s.url)} target="_blank" rel="noreferrer">
+                        {s.title || s.url}
+                      </a>{" "}
+                      <span className="muted">{s.source_type}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
             <div className="header-actions">
               {canResearch && (
+                <button type="button" disabled={disabled} onClick={() => void search(gap, false)}>
+                  {thisBusy ? "Ищем…" : "Найти в источниках (ИИ)"}
+                </button>
+              )}
+              {canResearch && emptySearch && (
                 <button
                   type="button"
+                  className="secondary"
                   disabled={disabled}
-                  onClick={() =>
-                    void run(gap.code, async () => {
-                      await researchStudyGap(studyId, gap.code, {
-                        active_substance: activeSubstance,
-                        dosage_form: dosageForm,
-                        use_mock_provider: !aiEnabled,
-                      });
-                      onNotice(`${gap.title}: поиск выполнен, проверьте предложения`);
-                    })
-                  }
+                  title="Демонстрационный набор источников — не для реального протокола"
+                  onClick={() => void search(gap, true)}
                 >
-                  {thisBusy ? "Ищем…" : "Найти в источниках (ИИ)"}
+                  Показать демо-набор
                 </button>
               )}
               {canManual && (
