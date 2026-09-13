@@ -29,6 +29,7 @@ from app.domain.research_http import ResearchHttpError
 from app.domain.research_provider import ProviderHit
 from app.domain.research_real_search import list_stored_search_results
 from app.domain.research_sanitize import sanitize_snippet
+from app.domain.research_tables import cv_table_findings
 from app.domain.research_usability import apply_usability
 
 # What to look for in the full text, per field the caller still needs
@@ -104,6 +105,21 @@ def relevant_passages(
     return found
 
 
+def _claim_key(claim: ResearchClaim) -> tuple:
+    """Identity of a proposal. One table states a CV per PK parameter, and two
+    parameters can share the same number — the parameter is part of the identity.
+    """
+    cv = claim.cvintra or {}
+    return (
+        claim.source_result_id,
+        claim.field_path,
+        claim.value,
+        cv.get("PK_parameter"),
+        cv.get("CV_range_low"),
+        cv.get("CV_range_high"),
+    )
+
+
 def _source_result_for(task_id: str, study_id: str | None, result: Any, text: str) -> SourceResult:
     """Reuse the SourceResult of the snippet pass so evidence stays on one source."""
     for existing in list_results(task_id):
@@ -158,6 +174,7 @@ def deep_read_task_sources(
     failed: list[dict[str, Any]] = []
     new_claims: list[ResearchClaim] = []
     passages_total = 0
+    table_values_total = 0
 
     # Resolved per call so a test can substitute the reader without the network
     read_source = fetcher or research_fetch.fetch_and_snapshot
@@ -174,6 +191,9 @@ def deep_read_task_sources(
 
         passages = relevant_passages(text, pattern)
         passages_total += len(passages)
+        # Variability is usually tabulated, so the tables are read as well
+        findings = cv_table_findings(text) if "cv_intra" in wanted else []
+        table_values_total += len(findings)
         # A document that never names the substance may be describing another drug
         names_substance = bool(substance) and substance.lower() in (text or "").lower()
         read.append(
@@ -182,10 +202,11 @@ def deep_read_task_sources(
                 "title": result.title,
                 "characters": len(text or ""),
                 "passages": len(passages),
+                "table_values": len(findings),
                 "names_substance": names_substance if substance else None,
             }
         )
-        if not passages:
+        if not passages and not findings:
             continue
 
         sr = _source_result_for(task_id, task.study_id, result, text)
@@ -193,7 +214,11 @@ def deep_read_task_sources(
         meta = dict(result.raw_metadata or {})
         meta["read_mode"] = "FULL_TEXT"
 
-        for passage in passages:
+        reads: list[tuple[str, dict[str, Any]]] = [(p, meta) for p in passages]
+        # A table cell needs no re-parsing: its row and column already say what it is
+        reads += [(f.excerpt, f.as_metadata()) for f in findings]
+
+        for passage, passage_meta in reads:
             hit = ProviderHit(
                 title=result.title,
                 locator=result.url,
@@ -202,7 +227,7 @@ def deep_read_task_sources(
                 author=result.authors,
                 publication_date=result.publication_date,
                 identifier=result.identifier,
-                metadata=meta,
+                metadata=passage_meta,
             )
             for claim in extract_claims_from_hit(
                 hit,
@@ -217,12 +242,7 @@ def deep_read_task_sources(
                         f"Документ не упоминает «{substance}» — значение может относиться "
                         "к другому препарату"
                     )
-                if any(
-                    x.source_result_id == claim.source_result_id
-                    and x.field_path == claim.field_path
-                    and x.value == claim.value
-                    for x in list_claims(task_id)
-                ):
+                if any(_claim_key(x) == _claim_key(claim) for x in list_claims(task_id)):
                     continue
                 claim.verification_status = "PROPOSED"
                 apply_usability(claim)
@@ -238,6 +258,7 @@ def deep_read_task_sources(
         "sources_read": read,
         "sources_failed": failed,
         "passages": passages_total,
+        "table_values": table_values_total,
         "claims": [c.to_dict() for c in new_claims],
         "new_claim_count": len(new_claims),
         "study_mutated": False,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.domain.research_evidence_models import CVintraEvidence, ResearchClaim
-from app.domain.research_usability import apply_usability
+from app.domain.research_usability import compute_usability
 from app.domain.sample_size_engine_classes import (
     ELIGIBLE_APPLICABILITY,
     INELIGIBLE_APPLICABILITY,
@@ -17,7 +17,9 @@ def _as_cvintra(claim: ResearchClaim | dict[str, Any] | CVintraEvidence) -> dict
     if isinstance(claim, CVintraEvidence):
         return claim.to_dict()
     if isinstance(claim, ResearchClaim):
-        apply_usability(claim, decision_domain="STATISTICS")
+        # Read the claim as stored. Rewriting usability here for STATISTICS
+        # used to mark a DESIGN-scoped CVintra unusable and send the writer
+        # back to type the same number again.
         if claim.cvintra:
             return dict(claim.cvintra)
         # Measurement-shaped CV
@@ -57,10 +59,9 @@ def evaluate_cvintra_eligibility(
     applicability = None
     usability = None
     if isinstance(claim, ResearchClaim):
-        apply_usability(claim, decision_domain="STATISTICS")
         verification = claim.verification_status
         applicability = claim.applicability
-        usability = claim.usability
+        usability = claim.usability or compute_usability(claim)
     elif isinstance(claim, CVintraEvidence):
         verification = claim.verification_status
         applicability = claim.applicability
@@ -157,6 +158,84 @@ def list_eligible_cvintra_for_parameter(
             return [], ["MISSING_CVINTRA_AUC", "MISSING_VERIFIED_CVINTRA"]
         return [], ["MISSING_VERIFIED_CVINTRA"]
     return eligible, []
+
+
+# Blockers that mean "no usable CVintra". Value is the parameter they ask for.
+CV_EVIDENCE_BLOCKERS: dict[str, str | None] = {
+    "MISSING_VERIFIED_CVINTRA": None,
+    "MISSING_CVINTRA": None,
+    "MISSING_CVINTRA_CMAX": "Cmax",
+    "MISSING_CVINTRA_AUC": "AUC",
+    "CV_PROPOSED_NOT_ALLOWED": None,
+    "CV_NOT_USABLE": None,
+    "CV_NOT_ELIGIBLE": None,
+    "CV_LOW_APPLICABILITY": None,
+    "CV_REJECTED_NOT_ALLOWED": None,
+    "CV_UNKNOWN_TYPE_NOT_ALLOWED": None,
+    "CV_BETWEEN_SUBJECT_NOT_ALLOWED": None,
+    "CV_MISSING_PK_PARAMETER": None,
+}
+
+# Said once the evidence exists but the engine has not run on it yet
+CALCULATION_NOT_RUN = "CALCULATION_NOT_RUN"
+CALCULATION_REQUIRES_RERUN = "CALCULATION_REQUIRES_RERUN"
+
+
+def eligible_cv_parameters(claims: list[ResearchClaim]) -> set[str]:
+    """PK parameters that now have CVintra the engine is allowed to use."""
+    parameters: set[str] = set()
+    for claim in claims:
+        cv = _as_cvintra(claim)
+        if not cv:
+            continue
+        parameter = str(cv.get("PK_parameter") or "")
+        if not parameter:
+            continue
+        ok, _blockers = evaluate_cvintra_eligibility(claim, required_parameter=parameter)
+        if ok:
+            parameters.add(parameter)
+    return parameters
+
+
+def _satisfied_by(parameter_asked: str | None, available: set[str]) -> bool:
+    if not available:
+        return False
+    if parameter_asked is None:
+        return True
+    if parameter_asked == "AUC":
+        # AUC0-t and AUC0-inf both answer a request for AUC variability
+        return any(p.startswith("AUC") for p in available)
+    return parameter_asked in available
+
+
+def current_evidence_blockers(
+    stored_reasons: list[Any],
+    claims: list[ResearchClaim],
+    *,
+    has_calculation: bool,
+) -> list[str]:
+    """Stored blockers re-read against the evidence that exists right now.
+
+    A calculation keeps the blockers it had when it ran. Replaying them after the
+    expert supplied the value sends the writer back to a gap that is already
+    closed, so a satisfied "no CVintra" blocker is replaced by the step that
+    actually remains: running the calculation again on the new evidence.
+    """
+    available = eligible_cv_parameters(claims)
+    kept: list[str] = []
+    satisfied = False
+    for raw in stored_reasons or []:
+        code = str(raw)
+        if code in CV_EVIDENCE_BLOCKERS and _satisfied_by(CV_EVIDENCE_BLOCKERS[code], available):
+            satisfied = True
+            continue
+        if code not in kept:
+            kept.append(code)
+    if satisfied:
+        remaining = CALCULATION_REQUIRES_RERUN if has_calculation else CALCULATION_NOT_RUN
+        if remaining not in kept:
+            kept.append(remaining)
+    return kept
 
 
 def extract_cv_numeric(claim: ResearchClaim | dict[str, Any] | CVintraEvidence) -> tuple[float, str, str]:

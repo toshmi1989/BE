@@ -163,16 +163,17 @@ def _tmax_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | 
 
 def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | None:
     cv_value = meta.get("CV_value")
-    rlow = rhigh = None
+    # A table cell can state a range just as a sentence can
+    rlow, rhigh = meta.get("CV_range_low"), meta.get("CV_range_high")
     stating = text
-    if cv_value is None:
+    if cv_value is None and rlow is None:
         parsed = _cv_percent_from_text(text)
         if parsed is None:
             # Nothing to propose: the source names CV without stating it
             return None
         cv_value, rlow, rhigh = parsed["value"], parsed["range_low"], parsed["range_high"]
         stating = parsed["clause"]
-    var = meta.get("variability_type") or _variability_type(stating)
+    var = meta.get("variability_type") or variability_type(stating)
     pk = meta.get("PK_parameter") or (
         "Cmax"
         if re.search(r"Cmax", stating, re.I)
@@ -223,7 +224,7 @@ def _cv_claim(hit, meta, text, task_id, sr, study_id, ctx) -> ResearchClaim | No
         excerpt=(stating or text)[:240],
         extraction_method="DETERMINISTIC",
         cvintra=cv.to_dict(),
-        decision_domains=["DESIGN"] if var == "WITHIN_SUBJECT" else [],
+        decision_domains=["DESIGN", "STATISTICS"] if var == "WITHIN_SUBJECT" else [],
         applicability=cv.applicability,
         usability=cv.usability,
         study_id=study_id,
@@ -414,7 +415,7 @@ def _percent_near_cv(text: str) -> float | None:
     return _as_number(m.group(1)) if m else None
 
 
-def _variability_type(text: str) -> str:
+def variability_type(text: str) -> str:
     """Within- and between-subject are different quantities; never guess between them."""
     within = bool(_WITHIN_SUBJECT_RE.search(text))
     between = bool(_BETWEEN_SUBJECT_RE.search(text))

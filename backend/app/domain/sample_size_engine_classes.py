@@ -71,6 +71,8 @@ INPUT_SOURCE_KINDS: tuple[str, ...] = (
     "EXPLICIT_CONFIGURATION",
     "PROJECT_DEFAULT",
     "SYNOPSIS",
+    "REGULATORY_REQUIREMENT",  # value the EAEU rules prescribe
+    "PLANNING_CONVENTION",  # planning assumption, not prescribed by a regulation
 )
 
 # Blocking / gate reason codes

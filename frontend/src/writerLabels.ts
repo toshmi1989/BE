@@ -79,6 +79,8 @@ const REASON_RU: Record<string, string> = {
   MISSING_TMAX_FOR_SAMPLING: "нет подтверждённого ожидаемого Tmax",
   MISSING_HALF_LIFE_FOR_WASHOUT: "нет подтверждённого периода полувыведения",
   MISSING_PROVENANCE: "у части значений нет источника",
+  CALCULATION_NOT_RUN: "данные есть — запустите расчёт размера выборки",
+  CALCULATION_REQUIRES_RERUN: "значение появилось после расчёта — пересчитайте размер выборки",
 };
 
 export function humanReasons(reasons: unknown): string {

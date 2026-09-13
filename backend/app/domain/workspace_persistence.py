@@ -161,7 +161,11 @@ def _persist_workspace_bundle(
             bundle["sample_size_payload"] = row.sample_size_payload
         if not bundle["statistics_payload"] and row.statistics_payload:
             bundle["statistics_payload"] = row.statistics_payload
-        if (not bundle["research_payload"] or not (bundle["research_payload"] or {}).get("tasks")) and row.research_payload:
+        # Only fall back to the stored bag when this process has nothing.
+        # Claims without a research task (expert typed the value) used to be
+        # discarded because the guard looked only at tasks.
+        new_research = bundle["research_payload"] or {}
+        if not (new_research.get("tasks") or new_research.get("claims")) and row.research_payload:
             bundle["research_payload"] = row.research_payload
         bundle["content_hash"] = _json_hash(
             {

@@ -1601,7 +1601,12 @@ export type GapResearchResult = {
   found: number;
   awaiting_verification: number;
   sources: GapSource[];
-  documents_read?: Array<{ title: string | null; url: string | null; passages: number }>;
+  documents_read?: Array<{
+    title: string | null;
+    url: string | null;
+    passages: number;
+    table_values?: number;
+  }>;
   documents_unavailable?: Array<{ title: string | null; url: string | null; error: string }>;
   message: string | null;
   gap: StudyGap | null;

@@ -11,6 +11,7 @@ from app.domain.exceptions import ValidationError
 from app.domain.research_evidence_models import ResearchClaim
 from app.domain.research_evidence_store import list_claims
 from app.domain.sample_size_eligibility import (
+    current_evidence_blockers,
     evaluate_cvintra_eligibility,
     extract_cv_numeric,
     list_eligible_cvintra_for_parameter,
@@ -500,8 +501,9 @@ def ui_sample_size_panel(study_id: str, *, context: dict[str, Any] | None = None
         cur_n = latest.current_protocol_n
         cur_src = latest.current_protocol_n_source
 
+    claims = list_claims(study_id=study_id)
     evidence_rows = []
-    for c in list_claims(study_id=study_id):
+    for c in claims:
         if not c.cvintra and not (
             c.field_path and "cv" in str(c.field_path).lower()
         ):
@@ -538,7 +540,13 @@ def ui_sample_size_panel(study_id: str, *, context: dict[str, Any] | None = None
         "required_n": latest.required_n if latest else None,
         "discrepancy": latest.discrepancy.to_dict() if latest and latest.discrepancy else None,
         "status": latest.status if latest else "NO_CALCULATION",
-        "blocking_reasons": latest.blocking_reasons if latest else ["MISSING_VERIFIED_CVINTRA"],
+        # Blockers are re-read against present evidence: a calculation keeps the
+        # ones it ran with, and replaying them hides that the value has arrived
+        "blocking_reasons": current_evidence_blockers(
+            list(latest.blocking_reasons) if latest else ["MISSING_VERIFIED_CVINTRA"],
+            claims,
+            has_calculation=latest is not None,
+        ),
         "calculated_shown_as_approved": False,
         "study_mutated": False,
         "actions": ["Review calculation", "Select controlling scenario"],

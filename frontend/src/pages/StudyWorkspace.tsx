@@ -1618,7 +1618,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
         {tab === "decisions" && activeStudy && (
           <section className="panel">
             <h2>Размер выборки</h2>
-            {ssBlocked && (
+            {ssBlocked && !cvReady && (
               <>
                 <p>
                   Расчёт недоступен, пока нет подтверждённых входных данных.{" "}

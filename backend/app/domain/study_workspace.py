@@ -201,6 +201,11 @@ def _find_package(study_id: str, package_id: str | None = None):
     return None
 
 
+def find_study_package(study_id: str, package_id: str | None = None):
+    """The input package a study reads its extracted candidates from."""
+    return _find_package(study_id, package_id)
+
+
 def aggregate_conflicts(study_id: str, *, package_id: str | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     pkg = _find_package(study_id, package_id)

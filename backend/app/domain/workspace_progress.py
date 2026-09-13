@@ -7,6 +7,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.decision_store import list_decisions
+from app.domain.research_evidence_store import list_claims
+from app.domain.sample_size_eligibility import current_evidence_blockers
+from app.domain.sample_size_engine import ui_sample_size_panel
 from app.domain.sample_size_store import list_calculations
 from app.domain.statistics_store import latest_plan as latest_stats_plan
 from app.domain.study_workspace import (
@@ -117,6 +120,8 @@ REASON_COPY_RU: dict[str, str] = {
     "METHOD_NOT_IMPLEMENTED_REQUIRES_REVIEW": "метод для этого дизайна требует ручной проверки",
     "MISSING_TMAX_FOR_SAMPLING": "нет подтверждённого ожидаемого Tmax",
     "MISSING_HALF_LIFE_FOR_WASHOUT": "нет подтверждённого периода полувыведения",
+    "CALCULATION_NOT_RUN": "данные есть — расчёт ещё не запускался",
+    "CALCULATION_REQUIRES_RERUN": "значение появилось после расчёта — нужно пересчитать",
 }
 
 
@@ -209,11 +214,9 @@ def _actionable_blockers(
         )
 
     if ss is None or not _ss_approved(ss):
-        reasons = []
-        if ss is not None:
-            reasons = list(getattr(ss, "blocking_reasons", None) or [])
-        if not reasons and ss is None:
-            reasons = ["MISSING_VERIFIED_CVINTRA"]
+        # The panel re-reads stored blockers against present evidence, so a value
+        # the expert already typed is not asked for a second time
+        reasons = list(ui_sample_size_panel(study_id).get("blocking_reasons") or [])
         if not _ss_approved(ss):
             blockers.append(
                 {
@@ -230,7 +233,15 @@ def _actionable_blockers(
             )
 
     if st is None or not _st_approved(st):
-        br = [str(x) for x in (getattr(st, "blocking_reasons", None) or [])] if st else []
+        br = (
+            current_evidence_blockers(
+                list(getattr(st, "blocking_reasons", None) or []),
+                list_claims(study_id=study_id),
+                has_calculation=True,
+            )
+            if st
+            else []
+        )
         needs_primary = st is None or any(
             "PRIMARY" in x.upper() or "REQUIRES_EXPERT_SELECTION" in x.upper() for x in br
         )

@@ -26,6 +26,7 @@ from app.domain.research_evidence_store import (
     put_result,
 )
 from app.domain.research_usability import apply_usability
+from app.domain.sample_size_eligibility import current_evidence_blockers
 from app.domain.sample_size_engine import ui_sample_size_panel
 from app.domain.sample_size_engine_classes import SAMPLE_SIZE_PK_PARAMETERS
 from app.domain.statistics_store import latest_plan as latest_statistics_plan
@@ -232,7 +233,14 @@ def _statistics_gap_codes(study_id: str) -> list[str]:
     if plan is None:
         return []
     codes: list[str] = []
-    for b in plan.blocking_reasons or []:
+    # A stored plan keeps the blockers it was built with; re-read them against
+    # the evidence that exists now, or a closed gap would be asked for again
+    reasons = current_evidence_blockers(
+        list(plan.blocking_reasons or []),
+        list_claims(study_id=study_id),
+        has_calculation=True,
+    )
+    for b in reasons:
         code = str(b)
         if code in IGNORED_ENGINE_CODES:
             continue
@@ -293,13 +301,12 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
             if meta.get("claim_field") == "cv_intra"
             else []
         )
-        verified = [p for p in proposals if p["verification_status"] == "VERIFIED" and p["usable"]]
+        verified = [p for p in proposals if p["verification_status"] == "VERIFIED"]
+        # The expert already confirmed the number. Keep it out of the open list
+        # even if an engine has not yet run on it — that is a later step.
         if verified:
-            status = "VERIFIED"
-        elif proposals:
-            status = "PROPOSED"
-        else:
-            status = "OPEN"
+            continue
+        status = "PROPOSED" if proposals else "OPEN"
         task = tasks_by_code.get(code)
         gaps.append(
             {
@@ -324,8 +331,7 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
                 "proposals": proposals,
                 "related_findings": related,
                 "research_task_id": task.id if task else None,
-                # Verified but the engine still reports it — needs apply/recompute
-                "needs_apply": status == "VERIFIED",
+                "needs_apply": False,
                 "severity": "WARNING",
                 "scope": "STEP",
             }
@@ -343,7 +349,6 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
             "extraction_method": p["extraction_method"],
         }
         for code, meta in GAP_CATALOG.items()
-        if code not in origins
         for c in claims
         if _claim_matches(meta, c)
         and c.verification_status == "VERIFIED"
@@ -463,7 +468,11 @@ def resolve_gap_manually(
             "CV_unit": unit_value or "%",
             "PK_parameter": pk_parameter,
             "variability_type": "WITHIN_SUBJECT",
+            "is_cvintra": True,
+            "verification_status": "VERIFIED",
+            "applicability": "DIRECT",
         }
+        claim.decision_domains = ["DESIGN", "STATISTICS"]
     else:
         claim.measurement = {
             "parameter": meta["title"],

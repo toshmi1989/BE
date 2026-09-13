@@ -306,6 +306,61 @@ def test_verify_proposal_unblocks_dependent_step(client: TestClient):
     assert _gap(client, "MISSING_TMAX_FOR_SAMPLING") is None
 
 
+def test_typed_values_survive_reload_and_do_not_reopen_the_gap(client: TestClient):
+    """The loop the writer hit: type a value, refresh, the gap asks for it again.
+
+    Persist wipes process memory. The next GET must still see the number, and
+    Sample Size must not send the writer back to type CVintra a second time.
+    """
+    _bind_golden(client)
+
+    for code, body in (
+        (
+            "MISSING_TMAX_FOR_SAMPLING",
+            {"value": "2–4", "rationale": "ОХЛП, раздел 5.2", "actor": "writer@example.com"},
+        ),
+        (
+            "MISSING_HALF_LIFE_FOR_WASHOUT",
+            {"value": "9.5", "rationale": "ОХЛП, раздел 5.2", "actor": "writer@example.com"},
+        ),
+        (
+            "MISSING_CVINTRA",
+            {
+                "value": "22",
+                "rationale": "Публикация BE, CVintra Cmax 22%",
+                "actor": "writer@example.com",
+                "pk_parameter": "Cmax",
+            },
+        ),
+    ):
+        r = client.post(f"/api/studies/{STUDY}/gaps/{code}/resolve-manual", json=body)
+        assert r.status_code == 200, r.text
+        # Immediate response after persist/hydrate must not drop the value
+        assert _gap(client, code) is None, f"{code} reappeared right after save"
+
+    again = client.get(f"/api/studies/{STUDY}/gaps").json()
+    leftover = {g["code"] for g in again["gaps"] if g["code"].startswith("MISSING_")}
+    assert "MISSING_TMAX_FOR_SAMPLING" not in leftover
+    assert "MISSING_HALF_LIFE_FOR_WASHOUT" not in leftover
+    assert "MISSING_CVINTRA" not in leftover
+
+    ss = client.get(f"/api/studies/{STUDY}/sample-size/panel").json()
+    reasons = ss.get("blocking_reasons") or []
+    assert "MISSING_VERIFIED_CVINTRA" not in reasons
+    assert "CV_NOT_USABLE" not in reasons
+    assert "CV_PROPOSED_NOT_ALLOWED" not in reasons
+
+    progress = client.get(f"/api/studies/{STUDY}/writer-progress").json()
+    gap_blockers = [
+        b for b in (progress.get("blockers") or []) if str(b.get("code") or "").startswith("GAP_MISSING_")
+    ]
+    codes = {b.get("gap_code") or b.get("code") for b in gap_blockers}
+    assert "MISSING_CVINTRA" not in codes
+    assert "GAP_MISSING_CVINTRA" not in codes
+    primary = progress.get("primary_next_action") or {}
+    assert primary.get("tab") != "gaps", primary
+
+
 def test_manual_entry_over_http(client: TestClient):
     _bind_golden(client)
     r = client.post(

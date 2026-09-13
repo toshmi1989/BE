@@ -92,8 +92,11 @@ def apply_verified_research_to_context(
             ctx.knowledge_gaps = [
                 g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_MEAL_COMPOSITION"
             ]
-        elif c.field_path == "cv_intra" and c.cvintra and c.cvintra.get("is_cvintra"):
-            if can_unblock_decision(c, domain="DESIGN"):
+        elif c.field_path in {"cv_intra", "cvintra", "statistics.cvintra"} and c.cvintra:
+            # A dict written by hand has no is_cvintra flag; within-subject is enough
+            if str(c.cvintra.get("variability_type") or "") != "WITHIN_SUBJECT":
+                continue
+            if c.usability == "USABLE_FOR_DECISION" or can_unblock_decision(c, domain="DESIGN"):
                 ctx.cvintra = c.cvintra.get("CV_value")
                 ctx.structured_facts["cv_intra"] = ctx.cvintra
                 ctx.fact_statuses["cv_intra"] = "VERIFIED"

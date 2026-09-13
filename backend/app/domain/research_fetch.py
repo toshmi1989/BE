@@ -8,7 +8,8 @@ from typing import Any
 
 from app.domain.document_ingest import FORBIDDEN_SUFFIXES, MAX_UPLOAD_BYTES
 from app.domain.research_http import ResearchHttpError, http_get_bytes
-from app.domain.research_sanitize import sanitize_snippet, sanitize_url, strip_html
+from app.domain.research_sanitize import sanitize_snippet, sanitize_url
+from app.domain.research_tables import html_text_with_tables
 from app.domain.research_search_result import SourceSnapshot
 from app.domain.study_input_binary_ingest import ingest_binary_bytes
 
@@ -93,7 +94,8 @@ def fetch_and_snapshot(
         except Exception as exc:  # noqa: BLE001
             raise ResearchHttpError(f"HTML/text parse failure: {exc}", kind="PARSE_FAILURE") from exc
         if "html" in mime or suffix in {".html", ".htm"}:
-            text = strip_html(text)
+            # Keep the table grid: a CV column is meaningless once its rows merge
+            text = html_text_with_tables(text)
         h = hashlib.sha256(content).hexdigest()
         snap = SourceSnapshot(
             locator=url,

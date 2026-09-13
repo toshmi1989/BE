@@ -1084,7 +1084,12 @@ def research_study_gap(
         "awaiting_verification": awaiting,
         "sources": sources,
         "documents_read": [
-            {"title": r["title"], "url": r["url"], "passages": r["passages"]}
+            {
+                "title": r["title"],
+                "url": r["url"],
+                "passages": r["passages"],
+                "table_values": r.get("table_values", 0),
+            }
             for r in (deep or {}).get("sources_read") or []
         ],
         "documents_unavailable": list((deep or {}).get("sources_failed") or []),
@@ -1193,6 +1198,178 @@ def resolve_study_gap_manually(
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
     panel = _gaps_panel(db, study_id, payload.package_id)
     return {**result, "gaps": panel["gaps"], "counts": panel["counts"]}
+
+
+class SheetFillIn(BaseModel):
+    value: Any = None
+    rationale: str = ""
+    unit: str | None = None
+    pk_parameter: str | None = None
+    actor: str | None = None
+    package_id: str | None = None
+
+
+class SheetRunIn(BaseModel):
+    actor: str | None = None
+    package_id: str | None = None
+    finalize: bool = False
+
+
+@router.get("/studies/{study_id}/input-sheet")
+def get_input_sheet(
+    study_id: str,
+    package_id: str | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Everything the protocol needs, in one list, with the source of each value."""
+    from app.domain.protocol_input_sheet import build_input_sheet
+
+    _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    return build_input_sheet(study_id, package_id=package_id)
+
+
+@router.post("/studies/{study_id}/input-sheet/interpret")
+def interpret_documents(
+    study_id: str,
+    payload: SheetRunIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Read the uploaded documents and fill what the regulation already fixes."""
+    from app.domain import protocol_orchestrator
+
+    payload = payload or SheetRunIn()
+    auth = _auth_for_study(
+        study_id, permission="upload_documents", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "writer")
+    try:
+        out = protocol_orchestrator.interpret(
+            db, study_id, actor=actor, package_id=payload.package_id
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    return out
+
+
+@router.post("/studies/{study_id}/input-sheet/{key}/fill")
+def fill_input_sheet_row(
+    study_id: str,
+    key: str,
+    payload: SheetFillIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Expert supplies one value. Recorded against their name, never silent."""
+    from app.domain.protocol_input_sheet import build_input_sheet, fill_row
+
+    auth = _auth_for_study(
+        study_id, permission="approve_decisions", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "")
+    try:
+        result = fill_row(
+            study_id,
+            key,
+            value=payload.value,
+            actor=actor,
+            rationale=payload.rationale,
+            unit=payload.unit,
+            pk_parameter=payload.pk_parameter,
+            package_id=payload.package_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    append_audit(
+        study_id,
+        event="INPUT_SHEET_ROW_FILLED",
+        who=actor,
+        what=key,
+        new_value={"value": payload.value, "unit": payload.unit},
+        reason=payload.rationale or "Внесено экспертом",
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    ensure_db_authoritative(db, study_id)
+    sheet = build_input_sheet(study_id, package_id=payload.package_id)
+    return {**result, "sheet": sheet}
+
+
+@router.post("/studies/{study_id}/input-sheet/{key}/resolve-conflict")
+def resolve_input_sheet_conflict(
+    study_id: str,
+    key: str,
+    payload: SheetFillIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Documents disagree — the expert picks which value the protocol carries."""
+    from app.domain.protocol_input_sheet import build_input_sheet, resolve_conflict_row
+
+    auth = _auth_for_study(
+        study_id, permission="approve_decisions", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "")
+    try:
+        result = resolve_conflict_row(
+            study_id,
+            key,
+            value=payload.value,
+            actor=actor,
+            rationale=payload.rationale,
+            package_id=payload.package_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    append_audit(
+        study_id,
+        event="INPUT_SHEET_CONFLICT_RESOLVED",
+        who=actor,
+        what=key,
+        new_value={"value": result["value"], "conflict_id": result["conflict_id"]},
+        reason=payload.rationale,
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    ensure_db_authoritative(db, study_id)
+    sheet = build_input_sheet(study_id, package_id=payload.package_id)
+    return {**result, "sheet": sheet}
+
+
+@router.post("/studies/{study_id}/orchestrator/run")
+def run_orchestrator(
+    study_id: str,
+    payload: SheetRunIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Interpret, compute, check coherence, assemble. One button, one outcome."""
+    from app.domain import protocol_orchestrator
+
+    payload = payload or SheetRunIn()
+    auth = _auth_for_study(
+        study_id, permission="generate_protocol", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "")
+    try:
+        out = protocol_orchestrator.run(
+            db,
+            study_id,
+            actor=actor,
+            package_id=payload.package_id,
+            finalize=payload.finalize,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    return out
 
 
 @router.post("/studies/{study_id}/decisions/request-evidence")

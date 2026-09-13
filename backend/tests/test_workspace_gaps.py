@@ -162,6 +162,42 @@ def test_cvintra_needs_pk_parameter_then_feeds_sample_size(study):
     )
     assert "MISSING_VERIFIED_CVINTRA" not in rec.blocking_reasons
     assert "CV_PROPOSED_NOT_ALLOWED" not in rec.blocking_reasons
+    assert _gap(collect_study_gaps(STUDY), "MISSING_CVINTRA") is None
+
+
+def test_reading_the_sample_size_panel_does_not_unverify_cvintra(study):
+    """A DESIGN-scoped claim used to become NOT_USABLE on every panel read."""
+    from app.domain.research_evidence_models import ResearchClaim
+    from app.domain.research_evidence_store import put_claim
+    from app.domain.research_usability import apply_usability
+    from app.domain.sample_size_engine import ui_sample_size_panel
+
+    claim = ResearchClaim(
+        claim_text="CVintra Cmax 22%",
+        excerpt="intra-subject CV 22% for Cmax",
+        source_result_id="src-loop",
+        field_path="cv_intra",
+        value=22.0,
+        unit="%",
+        study_id=STUDY,
+        verification_status="VERIFIED",
+        applicability="DIRECT",
+        cvintra={
+            "CV_value": 22.0,
+            "CV_unit": "%",
+            "PK_parameter": "Cmax",
+            "variability_type": "WITHIN_SUBJECT",
+            "is_cvintra": True,
+        },
+        decision_domains=["DESIGN"],
+    )
+    apply_usability(claim)
+    put_claim(claim)
+
+    panel = ui_sample_size_panel(STUDY)
+    assert "MISSING_VERIFIED_CVINTRA" not in (panel.get("blocking_reasons") or [])
+    assert claim.usability == "USABLE_FOR_DECISION"
+    assert _gap(collect_study_gaps(STUDY), "MISSING_CVINTRA") is None
 
 
 def test_only_a_stated_meal_composition_becomes_a_proposal(study):
