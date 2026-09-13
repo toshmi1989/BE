@@ -133,6 +133,7 @@ def recompute(
             ai_select_method=payload.ai_select_method,
             observed_gmr=payload.observed_gmr,
             observed_ci=payload.observed_ci,
+            force_supersede_approved=True,
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e

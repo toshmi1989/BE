@@ -113,6 +113,7 @@ def calculate_sample_size_authoritative(
     decision_id: str | None = None,
     created_by: str | None = None,
     ai_authoritative: bool = False,
+    force_new: bool = False,
 ) -> SampleSizeCalculationRecord:
     """Gate → calculate → scenarios → discrepancy. Never mutates Study."""
     if ai_authoritative:
@@ -120,6 +121,16 @@ def calculate_sample_size_authoritative(
             "AI cannot perform authoritative sample-size calculation",
             field="ai",
         )
+
+    # Workflow draft assembly must keep an expert-accepted N; explicit Calculate
+    # in the UI passes force_new=True when a fresh run is intended.
+    if not force_new:
+        existing = list_calculations(study_id)
+        latest_accepted = existing[-1] if existing else None
+        if latest_accepted is not None and str(
+            getattr(latest_accepted, "status", "") or ""
+        ).upper() in {"ACCEPTED", "APPROVED"}:
+            return latest_accepted
 
     blockers: list[str] = []
     inputs: list[ProvenancedInput] = []

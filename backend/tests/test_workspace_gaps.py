@@ -331,6 +331,103 @@ def test_approved_statistics_plan_does_not_reopen_expert_gaps(study):
     assert panel["counts"]["verified"] >= 2
 
 
+def test_recompute_keeps_approved_statistics_plan(study):
+    from app.domain.statistics_engine import recompute_statistics_plan
+    from app.domain.statistics_models import AcceptanceIntervalSpec, StatisticalParameterPlan, StatisticsPlan
+    from app.domain.statistics_store import latest_plan, put_plan, reset_statistics_store
+
+    reset_statistics_store()
+    put_plan(
+        StatisticsPlan(
+            study_id=STUDY,
+            design="STANDARD_2X2_CROSSOVER",
+            status="APPROVED",
+            version=3,
+            analysis_population="PER_PROTOCOL",
+            parameters=[
+                StatisticalParameterPlan(
+                    parameter="Cmax",
+                    role="PRIMARY_BE",
+                    transformation="LOG",
+                    model="ANOVA_LOG_2X2",
+                    estimate="GEOMETRIC_MEAN_RATIO_TEST_REFERENCE",
+                    confidence_interval=0.90,
+                    acceptance_interval=AcceptanceIntervalSpec(
+                        lower_bound=0.8,
+                        upper_bound=1.25,
+                        source_role="EXPERT_DECISION",
+                    ),
+                )
+            ],
+        )
+    )
+    approved_id = latest_plan(STUDY).id
+    again = recompute_statistics_plan(study_id=STUDY, context=get_context(STUDY).to_dict())
+    assert again.id == approved_id
+    assert again.status == "APPROVED"
+    assert _gap(collect_study_gaps(STUDY), "MISSING_PRIMARY_BE_SELECTION") is None
+
+
+def test_draft_workflow_does_not_wipe_approvals_or_reopen_gaps(study):
+    """«Собрать черновик» must not replace APPROVED stats / ACCEPTED N with DRAFT recommendations."""
+    from app.domain.protocol_workflow import run_protocol_workflow
+    from app.domain.sample_size_models import SampleSizeCalculationRecord
+    from app.domain.sample_size_store import list_calculations, put_calculation, reset_sample_size_store
+    from app.domain.statistics_models import AcceptanceIntervalSpec, StatisticalParameterPlan, StatisticsPlan
+    from app.domain.statistics_store import latest_plan, put_plan, reset_statistics_store
+
+    reset_statistics_store()
+    reset_sample_size_store()
+    put_plan(
+        StatisticsPlan(
+            study_id=STUDY,
+            design="STANDARD_2X2_CROSSOVER",
+            status="APPROVED",
+            version=2,
+            analysis_population="PK_ANALYSIS_SET",
+            parameters=[
+                StatisticalParameterPlan(
+                    parameter="Cmax",
+                    role="PRIMARY_BE",
+                    transformation="LOG",
+                    model="ANOVA_LOG_2X2",
+                    estimate="GEOMETRIC_MEAN_RATIO_TEST_REFERENCE",
+                    confidence_interval=0.90,
+                    acceptance_interval=AcceptanceIntervalSpec(
+                        lower_bound=0.8,
+                        upper_bound=1.25,
+                        source_role="EXPERT_DECISION",
+                    ),
+                )
+            ],
+        )
+    )
+    put_calculation(
+        SampleSizeCalculationRecord(
+            study_id=STUDY,
+            design="STANDARD_2X2_CROSSOVER",
+            parameter="Cmax",
+            status="ACCEPTED",
+            method="CROSSOVER_2X2_TOST_NCT",
+            randomized_n=38,
+            required_n=34,
+            version_number=1,
+        )
+    )
+    approved_plan_id = latest_plan(STUDY).id
+    accepted_n_id = list_calculations(STUDY)[-1].id
+
+    run_protocol_workflow(STUDY, use_golden_fixture=True, prepare_protocol_draft=True, created_by="writer")
+
+    assert latest_plan(STUDY).id == approved_plan_id
+    assert latest_plan(STUDY).status == "APPROVED"
+    assert list_calculations(STUDY)[-1].id == accepted_n_id
+    assert list_calculations(STUDY)[-1].status == "ACCEPTED"
+    panel = collect_study_gaps(STUDY)
+    assert _gap(panel, "MISSING_PRIMARY_BE_SELECTION") is None
+    assert _gap(panel, "MISSING_ANALYSIS_POPULATION_RULE") is None
+
+
 def test_draft_plan_with_choices_drops_satisfied_stale_blockers(study):
     from app.domain.statistics_models import AcceptanceIntervalSpec, StatisticalParameterPlan, StatisticsPlan
     from app.domain.statistics_store import put_plan, reset_statistics_store

@@ -129,6 +129,7 @@ def recompute_statistics_plan(
     ai_select_method: bool = False,
     decision_id: str | None = None,
     supersede_previous: bool = True,
+    force_supersede_approved: bool = False,
 ) -> StatisticsPlan:
     """Build STATISTICAL_METHOD_PLAN from facts + explicit inputs. Never mutates Study."""
     if ai_select_method:
@@ -140,6 +141,17 @@ def recompute_statistics_plan(
             "Observed GMR/CI must not be injected without a post-study dataset interface",
             field="observed_data",
         )
+
+    # Draft / workflow recomputes must not silently replace an expert-approved plan
+    # (that reopened PRIMARY BE / population gaps after «Собрать черновик»).
+    prev_approved = latest_plan(study_id)
+    if (
+        supersede_previous
+        and not force_supersede_approved
+        and prev_approved is not None
+        and str(prev_approved.status or "").upper() == "APPROVED"
+    ):
+        return prev_approved
 
     blockers: list[str] = []
     gaps: list[dict[str, Any]] = []

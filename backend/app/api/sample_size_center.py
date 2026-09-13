@@ -112,6 +112,7 @@ def calculate(
             decision_id=payload.decision_id,
             created_by=payload.created_by,
             ai_authoritative=payload.ai_authoritative,
+            force_new=True,
         )
     except ValidationError as e:
         raise HTTPException(status_code=400, detail={"message": str(e), "field": e.field}) from e
