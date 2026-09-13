@@ -1652,7 +1652,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 </p>
                 <p className="muted small">
                   Определяющий параметр: {humanLabel(samplePanel.controlling_parameter || samplePanel.scenario)} ·
-                  метод: {humanLabel(samplePanel.engine || samplePanel.method)}
+                  метод: {humanLabel(samplePanel.method || samplePanel.engine)}
                 </p>
                 {ops.sampleSize.error && (
                   <div className="op-error" role="alert">
@@ -1679,8 +1679,9 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                         void withOp("sampleSize", async () => {
                           await approveSampleSizeCalculation(id, {
                             reviewer,
-                            decision: `Approve N=${String(samplePanel.calculated_n)}`,
-                            comment: "Approved from workspace",
+                            // Backend enum: ACCEPT_CALCULATION | ACCEPT_CURRENT_N | REQUEST_RECALCULATION
+                            decision: "ACCEPT_CALCULATION",
+                            comment: `Утверждён расчёт N=${String(samplePanel.calculated_n)}`,
                             project_to_study: false,
                           });
                           setNotice("Размер выборки утверждён.");

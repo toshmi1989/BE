@@ -1437,3 +1437,32 @@ def test_extra_panel_actions():
     panel = ui_sample_size_panel(STUDY)
     assert "Review calculation" in panel["actions"]
     assert "Select controlling scenario" in panel["actions"]
+
+
+def test_single_parameter_calc_sets_controlling_and_method_on_panel():
+    """A lone Cmax scenario is the controlling parameter — not 'expert must choose'."""
+    _, kw = _with_cv()
+    rec = calculate_sample_size_authoritative(**kw)
+    assert rec.status == "CALCULATED"
+    assert rec.controlling_parameter == "Cmax"
+    assert rec.method
+
+    panel = ui_sample_size_panel(STUDY)
+    assert panel["controlling_parameter"] == "Cmax"
+    assert panel["method"]
+    assert panel["calculated_n"] == rec.randomized_n
+
+
+def test_approve_rejects_free_text_decision_and_accepts_enum():
+    """The writer UI used to send 'Approve N=8' — only the enum is valid."""
+    _, kw = _with_cv()
+    rec = calculate_sample_size_authoritative(**kw)
+    with pytest.raises(ValidationError, match="Недопустимое решение"):
+        approve_calculation(rec.id, reviewer="writer@example.com", decision="Approve N=8")
+    out = approve_calculation(
+        rec.id,
+        reviewer="writer@example.com",
+        decision="ACCEPT_CALCULATION",
+        comment="Утверждён расчёт N=8",
+    )
+    assert out["status"] == "ACCEPTED"

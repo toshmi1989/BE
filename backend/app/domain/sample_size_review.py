@@ -39,7 +39,11 @@ def approve_calculation(
         "ACCEPT_CURRENT_N",
         "REQUEST_RECALCULATION",
     }:
-        raise ValidationError("Invalid approve decision", field="decision")
+        raise ValidationError(
+            "Недопустимое решение при утверждении размера выборки. "
+            "Допустимо: ACCEPT_CALCULATION, ACCEPT_CURRENT_N или REQUEST_RECALCULATION",
+            field="decision",
+        )
     rec = get_calculation(calc_id)
     if rec is None:
         raise ValidationError("Calculation not found", field="calculation_id")

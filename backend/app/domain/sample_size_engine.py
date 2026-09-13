@@ -467,7 +467,12 @@ def calculate_sample_size_authoritative(
         supersedes_id=supersedes,
         inputs=inputs,
         scenarios=scenarios,
-        controlling_parameter=controlling_parameter if not controlling_requires_expert else None,
+        # One scenario needs no expert pick — the only parameter is the controlling one
+        controlling_parameter=(
+            None
+            if controlling_requires_expert
+            else (controlling_parameter or (primary_param if len(scenarios) == 1 else None))
+        ),
         controlling_requires_expert=controlling_requires_expert if len(scenarios) > 1 else False,
         recommendation=recommendation,
         discrepancy=discrepancy,
@@ -532,10 +537,12 @@ def ui_sample_size_panel(study_id: str, *, context: dict[str, Any] | None = None
         "available_evidence": evidence_rows,
         "scenarios": [s.to_dict() for s in (latest.scenarios if latest else [])],
         "controlling_parameter": (
-            latest.controlling_parameter
-            if latest and latest.controlling_parameter
+            (latest.controlling_parameter or latest.parameter)
+            if latest and not getattr(latest, "controlling_requires_expert", False)
             else "REQUIRES_EXPERT_DECISION"
         ),
+        "method": latest.method if latest else None,
+        "engine": latest.engine_version if latest else None,
         "calculated_n": latest.randomized_n if latest else None,
         "required_n": latest.required_n if latest else None,
         "discrepancy": latest.discrepancy.to_dict() if latest and latest.discrepancy else None,
