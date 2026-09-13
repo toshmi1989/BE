@@ -217,21 +217,38 @@ def _actionable_blockers(
         # The panel re-reads stored blockers against present evidence, so a value
         # the expert already typed is not asked for a second time
         reasons = list(ui_sample_size_panel(study_id).get("blocking_reasons") or [])
-        if not _ss_approved(ss):
-            blockers.append(
-                {
-                    "severity": "WARNING" if not any(b.get("code") == "UNRESOLVED_CRITICAL_CONFLICT" for b in blockers) else "INFO",
-                    "code": "SAMPLE_SIZE_NOT_APPROVED",
-                    "what": "Размер выборки не рассчитан или не утверждён",
-                    "why": _humanize_reasons(reasons)
-                    or f"Статус расчёта: {getattr(ss, 'status', 'нет расчёта')}",
-                    "where": "Решения",
-                    "action_label": "Открыть Решения",
-                    "tab": "decisions",
-                    "resolve_dependency": True,
-                }
+        status = str(getattr(ss, "status", "") or "").upper() if ss is not None else ""
+        if status in {"CALCULATED", "PENDING_REVIEW"}:
+            what = "Размер выборки рассчитан — нужно утвердить"
+            why = (
+                "Расчёт уже есть (статус CALCULATED). Это ещё не утверждённое решение — "
+                "откройте «Решения» и нажмите «Утвердить размер выборки»."
             )
+            action_label = "Утвердить размер выборки"
+        elif status in {"BLOCKED", ""} or ss is None:
+            what = "Размер выборки не рассчитан"
+            why = _humanize_reasons(reasons) or "Нужны подтверждённые входные данные и расчёт N."
+            action_label = "Открыть Решения"
+        else:
+            what = "Размер выборки не утверждён"
+            why = _humanize_reasons(reasons) or f"Статус расчёта: {status}"
+            action_label = "Утвердить размер выборки"
+        blockers.append(
+            {
+                "severity": "WARNING"
+                if not any(b.get("code") == "UNRESOLVED_CRITICAL_CONFLICT" for b in blockers)
+                else "INFO",
+                "code": "SAMPLE_SIZE_NOT_APPROVED",
+                "what": what,
+                "why": why,
+                "where": "Решения",
+                "action_label": action_label,
+                "tab": "decisions",
+                "resolve_dependency": True,
+            }
+        )
 
+    covered_expert_gaps: set[str] = set()
     if st is None or not _st_approved(st):
         br = (
             current_evidence_blockers(
@@ -245,15 +262,23 @@ def _actionable_blockers(
         needs_primary = st is None or any(
             "PRIMARY" in x.upper() or "REQUIRES_EXPERT_SELECTION" in x.upper() for x in br
         )
-        needs_population = any("ANALYSIS_POPULATION" in x.upper() for x in br)
+        needs_population = st is None or any("ANALYSIS_POPULATION" in x.upper() for x in br)
         if needs_population and not needs_primary:
             what = "Не задана популяция анализа"
+            action_label = "Выбрать популяцию анализа"
         elif needs_primary and needs_population:
             what = "Не выбраны основной endpoint и популяция анализа"
+            action_label = "Выбрать PRIMARY BE и популяцию"
         elif needs_primary:
             what = "Не выбран основной endpoint биоэквивалентности"
+            action_label = "Выбрать PRIMARY BE"
         else:
             what = "Статистический план не утверждён"
+            action_label = "Утвердить статистический план"
+        if needs_primary:
+            covered_expert_gaps.add("MISSING_PRIMARY_BE_SELECTION")
+        if needs_population:
+            covered_expert_gaps.add("MISSING_ANALYSIS_POPULATION_RULE")
         blockers.append(
             {
                 "severity": "CRITICAL" if (needs_primary or needs_population) else "WARNING",
@@ -263,7 +288,7 @@ def _actionable_blockers(
                 "what": what,
                 "why": _humanize_reasons(br) or "Нет утверждённого статистического плана.",
                 "where": "Решения",
-                "action_label": "Открыть Решения",
+                "action_label": action_label,
                 "tab": "decisions",
             }
         )
@@ -291,17 +316,21 @@ def _actionable_blockers(
             }
         )
 
-    # Missing inputs gate only the steps that consume them — never the whole protocol
+    # Missing inputs gate only the steps that consume them — never the whole protocol.
+    # Expert-decision gaps already named above must not appear a second time.
     from app.domain.workspace_gaps import EXPERT_DECISION, collect_study_gaps
 
     for gap in collect_study_gaps(study_id).get("gaps") or []:
         if gap.get("status") == "VERIFIED":
             continue
+        code = str(gap.get("code") or "")
+        if code in covered_expert_gaps:
+            continue
         engine_side = EXPERT_DECISION in (gap.get("resolution") or [])
         blockers.append(
             {
                 "severity": "WARNING",
-                "code": f"GAP_{gap['code']}",
+                "code": f"GAP_{code}",
                 "what": f"Нет данных: {gap['title']}",
                 "why": f"{gap['why']} Ждёт: {gap['blocked_by_this']}. Остальные шаги не заблокированы.",
                 "where": "Решения" if engine_side else "Пробелы",
@@ -309,7 +338,7 @@ def _actionable_blockers(
                 "tab": "decisions" if engine_side else "gaps",
                 "soft_gate": True,
                 "scope": "STEP",
-                "gap_code": gap["code"],
+                "gap_code": code,
             }
         )
 
@@ -374,6 +403,9 @@ def _map_primary_ru(b: dict[str, Any]) -> str:
     if code.startswith("GAP_"):
         return str(b.get("what") or "Закройте пробел в данных")
     if "SAMPLE" in code:
+        what = str(b.get("what") or "")
+        if "утвердить" in what.lower() or "рассчитан" in what.lower():
+            return "Утвердите размер выборки"
         return "Рассчитайте и утвердите размер выборки"
     if "PRIMARY_BE" in code or "STAT" in code:
         return str(b.get("what") or "Утвердите статистический план")
