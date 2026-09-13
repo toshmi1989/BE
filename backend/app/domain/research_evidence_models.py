@@ -194,6 +194,9 @@ class CVintraEvidence:
     applicability: str = "UNKNOWN"
     verification_status: str = "PROPOSED"
     usability: str = "REQUIRES_REVIEW"
+    # A source that states a range never becomes a point value on its own
+    CV_range_low: Any = None
+    CV_range_high: Any = None
 
     def __post_init__(self) -> None:
         if self.PK_parameter not in PK_PARAMETERS:

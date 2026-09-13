@@ -32,6 +32,28 @@ function sourceLabel(p: GapProposal): string {
   return "извлечено из источника";
 }
 
+function hostOf(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 40);
+  }
+}
+
+function SourceLink({ url }: { url?: string | null }) {
+  const host = hostOf(url);
+  if (!url || !host) return null;
+  return (
+    <>
+      {" · "}
+      <a href={url} target="_blank" rel="noreferrer">
+        {host}
+      </a>
+    </>
+  );
+}
+
 export type GapsPanelProps = {
   studyId: string;
   gaps: StudyGap[];
@@ -212,8 +234,12 @@ export function GapsPanel(props: GapsPanelProps) {
                           {sourceLabel(p)}
                           {p.confidence ? ` · достоверность: ${p.confidence}` : ""}
                           {p.pk_parameter ? ` · ${p.pk_parameter}` : ""}
+                          <SourceLink url={p.location} />
                         </span>
                       </div>
+                      {p.applicability_reason ? (
+                        <div className="op-error small">{p.applicability_reason}</div>
+                      ) : null}
                       {p.excerpt ? <div className="muted">{String(p.excerpt).slice(0, 300)}</div> : null}
                       {p.verification_status === "VERIFIED" ? (
                         <span className="status-pill status-green">Подтверждено</span>
@@ -236,6 +262,27 @@ export function GapsPanel(props: GapsPanelProps) {
                           Подтвердить
                         </button>
                       )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(gap.related_findings || []).length > 0 && (
+              <div className="ai-proposal-box">
+                <h4>Нашли в источниках, но для этого пробела не подходит</h4>
+                <ul className="small">
+                  {(gap.related_findings || []).map((f) => (
+                    <li key={f.claim_id}>
+                      <div>
+                        <strong>{f.value}</strong>
+                        {f.pk_parameter ? <span className="muted"> · {f.pk_parameter}</span> : null}
+                        <SourceLink url={f.location} />
+                      </div>
+                      <div className="muted">{f.why_not_usable}</div>
+                      {f.excerpt ? (
+                        <div className="muted">{String(f.excerpt).slice(0, 240)}</div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

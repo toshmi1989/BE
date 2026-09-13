@@ -159,10 +159,37 @@ def _claim_matches(meta: dict[str, Any], claim: ResearchClaim) -> bool:
     field = meta.get("claim_field")
     if not field:
         return False
-    if field == "cv_intra" and claim.cvintra:
-        return True
+    if field == "cv_intra":
+        # Between-subject variability is a different quantity — never offered as CVintra
+        return bool(claim.cvintra) and str(claim.cvintra.get("variability_type")) == "WITHIN_SUBJECT"
     fp = str(claim.field_path or "")
     return fp in CLAIM_FIELD_ALIASES.get(field, frozenset({field}))
+
+
+def _related_finding(claim: ResearchClaim) -> dict[str, Any] | None:
+    """Something the search did find, stated honestly as not usable for this gap."""
+    cv = claim.cvintra or {}
+    if not cv:
+        return None
+    var = str(cv.get("variability_type"))
+    if var == "WITHIN_SUBJECT":
+        return None
+    low, high = cv.get("CV_range_low"), cv.get("CV_range_high")
+    value = f"{low}–{high}%" if claim.value is None and low is not None else f"{claim.value}%"
+    reason = (
+        "это межиндивидуальная вариабельность (between-subject) — для размера выборки "
+        "нужна внутрииндивидуальная (within-subject)"
+        if var == "BETWEEN_SUBJECT"
+        else "в источнике не указано, внутри- или межиндивидуальная это вариабельность"
+    )
+    return {
+        "claim_id": claim.id,
+        "value": value,
+        "pk_parameter": cv.get("PK_parameter"),
+        "why_not_usable": reason,
+        "excerpt": claim.excerpt,
+        "location": claim.location,
+    }
 
 
 def _proposal(claim: ResearchClaim) -> dict[str, Any]:
@@ -172,11 +199,16 @@ def _proposal(claim: ResearchClaim) -> dict[str, Any]:
         value = m.get("value")
     if value is None and m.get("range_low") is not None:
         value = f"{m.get('range_low')}–{m.get('range_high')}"
+    cv = claim.cvintra or {}
+    if value is None and cv.get("CV_range_low") is not None:
+        value = f"{cv.get('CV_range_low')}–{cv.get('CV_range_high')}"
     return {
         "claim_id": claim.id,
         "value": value,
         "unit": claim.unit or m.get("unit"),
         "excerpt": claim.excerpt,
+        "location": claim.location,
+        "applicability_reason": claim.applicability_reason or None,
         "confidence": claim.confidence,
         "verification_status": claim.verification_status,
         "applicability": claim.applicability,
@@ -256,6 +288,11 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
     for code, origin_set in origins.items():
         meta = GAP_CATALOG[code]
         proposals = [_proposal(c) for c in claims if _claim_matches(meta, c)]
+        related = (
+            [f for c in claims if (f := _related_finding(c)) is not None]
+            if meta.get("claim_field") == "cv_intra"
+            else []
+        )
         verified = [p for p in proposals if p["verification_status"] == "VERIFIED" and p["usable"]]
         if verified:
             status = "VERIFIED"
@@ -285,6 +322,7 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
                 "sources_hint": list(meta.get("sources_hint") or ()),
                 "status": status,
                 "proposals": proposals,
+                "related_findings": related,
                 "research_task_id": task.id if task else None,
                 # Verified but the engine still reports it — needs apply/recompute
                 "needs_apply": status == "VERIFIED",

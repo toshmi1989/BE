@@ -1537,6 +1537,17 @@ export type GapProposal = {
   usable: boolean;
   extraction_method?: string | null;
   pk_parameter?: string | null;
+  location?: string | null;
+  applicability_reason?: string | null;
+};
+
+export type GapRelatedFinding = {
+  claim_id: string;
+  value: string;
+  pk_parameter?: string | null;
+  why_not_usable: string;
+  excerpt?: string | null;
+  location?: string | null;
 };
 
 export type StudyGap = {
@@ -1556,6 +1567,8 @@ export type StudyGap = {
   sources_hint: string[];
   status: "OPEN" | "PROPOSED" | "VERIFIED";
   proposals: GapProposal[];
+  /** Found in the sources but not usable for this gap, with the reason */
+  related_findings?: GapRelatedFinding[];
   research_task_id?: string | null;
   needs_apply: boolean;
 };
@@ -1588,6 +1601,8 @@ export type GapResearchResult = {
   found: number;
   awaiting_verification: number;
   sources: GapSource[];
+  documents_read?: Array<{ title: string | null; url: string | null; passages: number }>;
+  documents_unavailable?: Array<{ title: string | null; url: string | null; error: string }>;
   message: string | null;
   gap: StudyGap | null;
 };

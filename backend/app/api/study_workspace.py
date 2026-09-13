@@ -890,6 +890,33 @@ def _search_provider(payload: GapResearchIn):
     return RealWebResearchProvider(), None
 
 
+def _no_value_message(
+    sources: list[dict[str, Any]],
+    deep: dict[str, Any] | None,
+    gap: dict[str, Any] | None,
+) -> str:
+    """Say what was read and what was found — a dead end must be explainable."""
+    parts: list[str] = [f"Нашли источников: {len(sources)}"]
+    if deep:
+        read = deep.get("sources_read") or []
+        parts.append(f"полностью прочитали документов: {len(read)}")
+        denied = deep.get("sources_failed") or []
+        if denied:
+            parts.append(f"недоступны для чтения: {len(denied)} (платный доступ или запрет робота)")
+    parts.append("но значения, пригодного для расчёта, в них не заявлено")
+    text = ", ".join(parts) + "."
+
+    related = (gap or {}).get("related_findings") or []
+    if related:
+        first = related[0]
+        text += (
+            f" Нашли смежное: {first.get('value')}"
+            f"{' для ' + str(first.get('pk_parameter')) if first.get('pk_parameter') else ''} — "
+            f"{first.get('why_not_usable')}."
+        )
+    return text + " Внесите значение вручную, указав источник и обоснование."
+
+
 PROVIDER_LABEL_RU: dict[str, str] = {
     "MOCK": "демонстрационный набор источников",
     "WEB": "поиск в открытых источниках",
@@ -981,6 +1008,7 @@ def research_study_gap(
     message: str | None = None
     sources: list[dict[str, Any]] = []
 
+    deep: dict[str, Any] | None = None
     if provider.kind == "WEB":
         # Real path: registers sources, extracts from snippets, reports its own status
         from app.domain.research_real_search import run_real_search
@@ -999,6 +1027,16 @@ def research_study_gap(
             message = (
                 f"Поиск не удался: {'; '.join(out.get('errors') or ['внешние источники недоступны'])}. "
                 "Значение можно внести вручную."
+            )
+        elif sources and count_gap_proposals(study_id, code) <= before:
+            # Search snippets rarely state a PK number — open the documents themselves
+            from app.domain.research_deep_read import deep_read_task_sources
+
+            claim_field = meta.get("claim_field")
+            deep = deep_read_task_sources(
+                task.id,
+                field_paths=[claim_field] if claim_field else None,
+                context=context,
             )
     else:
         try:
@@ -1028,10 +1066,7 @@ def research_study_gap(
             message = f"{where}: новых предложений — {found}. Нужна проверка эксперта."
         elif sources:
             status = "SOURCES_ONLY"
-            message = (
-                f"Нашли источников: {len(sources)}, но значение из выдачи извлечь не удалось. "
-                "Откройте источник и внесите значение вручную."
-            )
+            message = _no_value_message(sources, deep, gap)
         else:
             status = "NOTHING_FOUND"
             message = (
@@ -1048,6 +1083,11 @@ def research_study_gap(
         "found": found,
         "awaiting_verification": awaiting,
         "sources": sources,
+        "documents_read": [
+            {"title": r["title"], "url": r["url"], "passages": r["passages"]}
+            for r in (deep or {}).get("sources_read") or []
+        ],
+        "documents_unavailable": list((deep or {}).get("sources_failed") or []),
         "message": message,
         "gap": gap,
         "auto_verified": False,

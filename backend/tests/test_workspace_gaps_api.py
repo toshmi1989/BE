@@ -131,6 +131,118 @@ def test_web_search_with_sources_but_no_value_says_so(client: TestClient, monkey
     assert "вручную" in body["message"]
 
 
+def test_button_opens_the_document_when_the_snippet_has_no_value(client: TestClient, monkeypatch):
+    """The number lives in the PDF, not in the search snippet."""
+    from app.domain import research_fetch, research_real_web
+
+    _bind_golden(client)
+    monkeypatch.setattr(
+        research_real_web,
+        "default_duckduckgo_search",
+        lambda query, client=None: [
+            {
+                "title": "Bioequivalence study of upadacitinib ER tablets",
+                "url": "https://journal.test/be-study",
+                "snippet": "Randomised crossover study in healthy volunteers.",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        research_fetch,
+        "fetch_and_snapshot",
+        lambda url, client=None: (
+            None,
+            "Upadacitinib bioequivalence: a 2x2 crossover study reported an\n"
+            "intra-subject CV of 18.4% for Cmax in 24 healthy volunteers.",
+        ),
+    )
+
+    body = client.post(
+        f"/api/studies/{STUDY}/gaps/MISSING_CVINTRA/research",
+        json={"active_substance": "upadacitinib"},
+    ).json()
+
+    assert body["status"] == "OK"
+    assert body["found"] >= 1
+    assert [d["url"] for d in body["documents_read"]] == ["https://journal.test/be-study"]
+    proposal = body["gap"]["proposals"][0]
+    assert proposal["value"] == 18.4
+    assert proposal["pk_parameter"] == "Cmax"
+    assert "18.4" in proposal["excerpt"]
+    assert proposal["location"] == "https://journal.test/be-study"
+
+
+def test_between_subject_variability_is_reported_as_not_usable(client: TestClient, monkeypatch):
+    """Sources state between-subject CV far more often — say so instead of staying silent."""
+    from app.domain import research_fetch, research_real_web
+
+    _bind_golden(client)
+    monkeypatch.setattr(
+        research_real_web,
+        "default_duckduckgo_search",
+        lambda query, client=None: [
+            {
+                "title": "Clinical Pharmacology Review",
+                "url": "https://fda.test/review.pdf",
+                "snippet": "NDA clinical pharmacology and biopharmaceutics review.",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        research_fetch,
+        "fetch_and_snapshot",
+        lambda url, client=None: (
+            None,
+            "In healthy subjects, the between-subject\nvariability (CV %) of upadacitinib\n"
+            "AUC and Cmax was approximately 20% to 35% for the clinically relevant regimens.",
+        ),
+    )
+
+    body = client.post(
+        f"/api/studies/{STUDY}/gaps/MISSING_CVINTRA/research",
+        json={"active_substance": "upadacitinib"},
+    ).json()
+
+    assert body["status"] == "SOURCES_ONLY"
+    assert body["found"] == 0
+    gap = body["gap"]
+    assert gap["proposals"] == [], "between-subject CV must never be offered as CVintra"
+    assert gap["related_findings"], "the finding must still be shown to the writer"
+    finding = gap["related_findings"][0]
+    assert finding["value"] == "20.0–35.0%"
+    assert "межиндивидуальная" in finding["why_not_usable"]
+    assert "межиндивидуальная" in body["message"]
+    assert "вручную" in body["message"]
+
+
+def test_unreadable_documents_are_counted_in_the_message(client: TestClient, monkeypatch):
+    from app.domain import research_fetch, research_real_web
+    from app.domain.research_http import ResearchHttpError
+
+    _bind_golden(client)
+    monkeypatch.setattr(
+        research_real_web,
+        "default_duckduckgo_search",
+        lambda query, client=None: [
+            {"title": "Paywalled review", "url": "https://paywall.test/a", "snippet": "Review."}
+        ],
+    )
+
+    def _denied(url, client=None):
+        raise ResearchHttpError("Access denied (403)", kind="ACCESS_DENIED")
+
+    monkeypatch.setattr(research_fetch, "fetch_and_snapshot", _denied)
+
+    body = client.post(
+        f"/api/studies/{STUDY}/gaps/MISSING_CVINTRA/research",
+        json={"active_substance": "upadacitinib"},
+    ).json()
+
+    assert body["status"] == "SOURCES_ONLY"
+    assert [d["error"] for d in body["documents_unavailable"]] == ["ACCESS_DENIED"]
+    assert "недоступны для чтения: 1" in body["message"]
+
+
 def test_research_without_results_tells_the_writer(client: TestClient, monkeypatch):
     from app.domain import research_real_web
 
