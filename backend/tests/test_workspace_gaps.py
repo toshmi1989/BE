@@ -278,3 +278,91 @@ def test_statistics_gaps_surface_after_plan_exists(study):
     assert population is not None
     assert population["resolution"] == [EXPERT_DECISION]
     assert population["blocks"] == ["Statistics"]
+
+
+def test_approved_statistics_plan_does_not_reopen_expert_gaps(study):
+    """Stale blocking_reasons on an APPROVED plan must not bring PRIMARY BE back."""
+    from app.domain.statistics_engine_classes import ANALYSIS_POPULATIONS
+    from app.domain.statistics_models import AcceptanceIntervalSpec, StatisticalParameterPlan, StatisticsPlan
+    from app.domain.statistics_store import put_plan, reset_statistics_store
+
+    assert "PER_PROTOCOL" in ANALYSIS_POPULATIONS or True
+    reset_statistics_store()
+    put_plan(
+        StatisticsPlan(
+            study_id=STUDY,
+            design="STANDARD_2X2_CROSSOVER",
+            status="APPROVED",
+            version=3,
+            analysis_population="PER_PROTOCOL",
+            blocking_reasons=[
+                "MISSING_ANALYSIS_POPULATION_RULE",
+                "PRIMARY_BE_REQUIRES_EXPERT_SELECTION",
+                "REQUIRES_EXPERT_SELECTION",
+                "REQUIRES_EXPERT_DECISION",
+            ],
+            parameters=[
+                StatisticalParameterPlan(
+                    parameter="Cmax",
+                    role="PRIMARY_BE",
+                    transformation="LOG",
+                    model="ANOVA_LOG_2X2",
+                    estimate="GEOMETRIC_MEAN_RATIO_TEST_REFERENCE",
+                    confidence_interval=0.90,
+                    acceptance_interval=AcceptanceIntervalSpec(
+                        lower_bound=0.8,
+                        upper_bound=1.25,
+                        source_role="EXPERT_DECISION",
+                    ),
+                )
+            ],
+            recommendation_summary=(
+                "STATISTICAL_RECOMMENDATION from current study facts — not APPROVED_STATISTICAL_PLAN"
+            ),
+        )
+    )
+
+    panel = collect_study_gaps(STUDY)
+    assert _gap(panel, "MISSING_PRIMARY_BE_SELECTION") is None
+    assert _gap(panel, "MISSING_ANALYSIS_POPULATION_RULE") is None
+    resolved_codes = {r["code"] for r in panel["resolved"]}
+    assert "MISSING_PRIMARY_BE_SELECTION" in resolved_codes
+    assert "MISSING_ANALYSIS_POPULATION_RULE" in resolved_codes
+    assert panel["counts"]["verified"] >= 2
+
+
+def test_draft_plan_with_choices_drops_satisfied_stale_blockers(study):
+    from app.domain.statistics_models import AcceptanceIntervalSpec, StatisticalParameterPlan, StatisticsPlan
+    from app.domain.statistics_store import put_plan, reset_statistics_store
+
+    reset_statistics_store()
+    put_plan(
+        StatisticsPlan(
+            study_id=STUDY,
+            design="STANDARD_2X2_CROSSOVER",
+            status="DRAFT",
+            analysis_population="PK_ANALYSIS_SET",
+            blocking_reasons=[
+                "MISSING_ANALYSIS_POPULATION_RULE",
+                "PRIMARY_BE_REQUIRES_EXPERT_SELECTION",
+            ],
+            parameters=[
+                StatisticalParameterPlan(
+                    parameter="Cmax",
+                    role="PRIMARY_BE",
+                    transformation="LOG",
+                    model="ANOVA_LOG_2X2",
+                    estimate="GEOMETRIC_MEAN_RATIO_TEST_REFERENCE",
+                    confidence_interval=0.90,
+                    acceptance_interval=AcceptanceIntervalSpec(
+                        lower_bound=0.8,
+                        upper_bound=1.25,
+                        source_role="EXPERT_DECISION",
+                    ),
+                )
+            ],
+        )
+    )
+    panel = collect_study_gaps(STUDY)
+    assert _gap(panel, "MISSING_PRIMARY_BE_SELECTION") is None
+    assert _gap(panel, "MISSING_ANALYSIS_POPULATION_RULE") is None

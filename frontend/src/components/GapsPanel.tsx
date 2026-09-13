@@ -196,7 +196,7 @@ export function GapsPanel(props: GapsPanelProps) {
               <span className={`status-pill ${STATUS_CLASS[gap.status] || "status-gray"}`}>
                 {STATUS_RU[gap.status] || gap.status}
               </span>
-              <span className="muted small">Ждёт: {gap.blocked_by_this}</span>
+              <span className="muted small">Блокирует: {gap.blocked_by_this}</span>
             </div>
             <h3>{gap.title}</h3>
             <dl className="decision-facts">

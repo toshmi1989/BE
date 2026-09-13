@@ -659,24 +659,59 @@ def apply_expert_modifications(
 
 def ui_statistics_panel(study_id: str, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
     plan = latest_plan(study_id)
+    approved = bool(plan and plan.status == "APPROVED")
+    # Stale blockers on an approved plan must not look like open work
+    raw_blockers = list(plan.blocking_reasons) if plan and not approved else []
+    if plan and not approved:
+        has_primary = any(p.role == "PRIMARY_BE" for p in (plan.parameters or []))
+        has_population = bool(plan.analysis_population)
+        kept: list[str] = []
+        for b in raw_blockers:
+            code = str(b)
+            if code in {"REQUIRES_EXPERT_DECISION", "AI_CANNOT_APPROVE", "AI_CANNOT_SELECT_METHOD"}:
+                continue
+            if has_primary and code in {
+                "MISSING_PRIMARY_PK_PARAMETER",
+                "REQUIRES_EXPERT_SELECTION",
+                "PRIMARY_BE_REQUIRES_EXPERT_SELECTION",
+            }:
+                continue
+            if has_population and code == "MISSING_ANALYSIS_POPULATION_RULE":
+                continue
+            kept.append(code)
+        raw_blockers = kept
+
+    primary = [
+        p.parameter for p in (plan.parameters if plan else []) if p.role == "PRIMARY_BE"
+    ]
+    if approved:
+        summary = (
+            f"Утверждён: PRIMARY BE = {', '.join(primary) or '—'}"
+            + (f"; популяция = {plan.analysis_population}" if plan and plan.analysis_population else "")
+        )
+    else:
+        summary = plan.recommendation_summary if plan else None
+
     return {
         "section": "STATISTICS",
         "title": "Статистический план",
         "study_id": study_id,
         "plan_id": plan.id if plan else None,
+        "version": plan.version if plan else None,
         "status": plan.status if plan else "NO_PLAN",
         "parameters": [p.display_dict() for p in (plan.parameters if plan else [])],
         "scenarios": [s.to_dict() for s in (plan.scenarios if plan else [])],
         "current_study_facts": plan.current_study_facts if plan else (context or {}),
-        "recommendation_summary": plan.recommendation_summary if plan else None,
-        "blocking_reasons": plan.blocking_reasons if plan else [],
-        "knowledge_gaps": plan.knowledge_gaps if plan else [],
-        "is_approved": bool(plan and plan.status == "APPROVED"),
+        "recommendation_summary": summary,
+        "blocking_reasons": raw_blockers,
+        "knowledge_gaps": [] if approved else (plan.knowledge_gaps if plan else []),
+        "analysis_population": plan.analysis_population if plan else None,
+        "is_approved": approved,
         "recommendation_shown_as_approved": False,
         "exposes_internal_enums": False,
         "study_mutated": False,
         "actions": ["Открыть evidence", "Изменить", "На проверку"],
-        "warning": "Требуется проверка методологии" if plan and plan.status != "APPROVED" else None,
+        "warning": None if approved else ("Требуется проверка методологии" if plan else None),
     }
 
 

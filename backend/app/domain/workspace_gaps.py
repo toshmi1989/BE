@@ -228,13 +228,24 @@ def count_gap_proposals(study_id: str, code: str) -> int:
 
 
 def _statistics_gap_codes(study_id: str) -> list[str]:
-    """Concrete statistics gaps. Generic 'expert must decide' markers are dropped."""
+    """Concrete statistics gaps. Generic 'expert must decide' markers are dropped.
+
+    A plan keeps the blockers it was built with. Replaying them after the expert
+    chose PRIMARY BE / population (or approved the plan) reopened gaps the writer
+    had already closed — so the live plan state wins over the stored reason list.
+    """
     plan = latest_statistics_plan(study_id)
     if plan is None:
         return []
+    if str(getattr(plan, "status", "") or "").upper() == "APPROVED":
+        return []
+
+    has_primary = any(
+        str(getattr(p, "role", "")) == "PRIMARY_BE" for p in (plan.parameters or [])
+    )
+    has_population = bool(getattr(plan, "analysis_population", None))
+
     codes: list[str] = []
-    # A stored plan keeps the blockers it was built with; re-read them against
-    # the evidence that exists now, or a closed gap would be asked for again
     reasons = current_evidence_blockers(
         list(plan.blocking_reasons or []),
         list_claims(study_id=study_id),
@@ -245,14 +256,53 @@ def _statistics_gap_codes(study_id: str) -> list[str]:
         if code in IGNORED_ENGINE_CODES:
             continue
         canon = CANONICAL_ALIASES.get(code, code)
-        if canon in GAP_CATALOG:
+        if canon == "MISSING_PRIMARY_BE_SELECTION" and has_primary:
+            continue
+        if canon == "MISSING_ANALYSIS_POPULATION_RULE" and has_population:
+            continue
+        if canon in GAP_CATALOG and canon not in codes:
             codes.append(canon)
-    has_primary = any(
-        str(getattr(p, "role", "")) == "PRIMARY_BE" for p in (plan.parameters or [])
-    )
-    if not has_primary:
+
+    if not has_primary and "MISSING_PRIMARY_BE_SELECTION" not in codes:
         codes.append("MISSING_PRIMARY_BE_SELECTION")
+    if not has_population and "MISSING_ANALYSIS_POPULATION_RULE" not in codes:
+        codes.append("MISSING_ANALYSIS_POPULATION_RULE")
     return codes
+
+
+def _expert_decision_resolved(study_id: str) -> list[dict[str, Any]]:
+    """PRIMARY BE / population closed in Decisions — show them as resolved, not open."""
+    plan = latest_statistics_plan(study_id)
+    if plan is None:
+        return []
+    out: list[dict[str, Any]] = []
+    primary = [
+        str(getattr(p, "parameter", "") or "")
+        for p in (plan.parameters or [])
+        if str(getattr(p, "role", "")) == "PRIMARY_BE"
+    ]
+    if primary:
+        out.append(
+            {
+                "code": "MISSING_PRIMARY_BE_SELECTION",
+                "title": GAP_CATALOG["MISSING_PRIMARY_BE_SELECTION"]["title"],
+                "value": ", ".join(primary),
+                "unit": None,
+                "extraction_method": "EXPERT_DECISION",
+            }
+        )
+    pop = getattr(plan, "analysis_population", None)
+    if pop:
+        out.append(
+            {
+                "code": "MISSING_ANALYSIS_POPULATION_RULE",
+                "title": GAP_CATALOG["MISSING_ANALYSIS_POPULATION_RULE"]["title"],
+                "value": str(pop),
+                "unit": None,
+                "extraction_method": "EXPERT_DECISION",
+            }
+        )
+    return out
 
 
 def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[str, Any]:
@@ -291,6 +341,10 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
 
     claims = list_claims(study_id=study_id)
     tasks_by_code = {t.knowledge_gap_code: t for t in list_tasks(study_id)}
+
+    # Expert choices already on the statistics plan must not reopen as gaps
+    for closed in _expert_decision_resolved(study_id):
+        origins.pop(str(closed["code"]), None)
 
     gaps: list[dict[str, Any]] = []
     for code, origin_set in origins.items():
@@ -354,6 +408,12 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
         and c.verification_status == "VERIFIED"
         for p in [_proposal(c)]
     ]
+    # Deduplicate by code — expert-decision rows first if both exist
+    seen_resolved = {str(r["code"]) for r in resolved}
+    for row in _expert_decision_resolved(study_id):
+        if row["code"] not in seen_resolved:
+            resolved.append(row)
+            seen_resolved.add(row["code"])
 
     return {
         "study_id": study_id,
@@ -363,7 +423,9 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
             "total": len(gaps),
             "open": len([g for g in gaps if g["status"] == "OPEN"]),
             "proposed": len([g for g in gaps if g["status"] == "PROPOSED"]),
-            "verified": len([g for g in gaps if g["status"] == "VERIFIED"]),
+            # Confirmed values live in `resolved` (verified claims + expert choices),
+            # not as VERIFIED rows in the open list.
+            "verified": len(resolved),
         },
         "protocol_frozen": False,
         "study_mutated": False,

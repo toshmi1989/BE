@@ -547,12 +547,16 @@ def ui_sample_size_panel(study_id: str, *, context: dict[str, Any] | None = None
         "required_n": latest.required_n if latest else None,
         "discrepancy": latest.discrepancy.to_dict() if latest and latest.discrepancy else None,
         "status": latest.status if latest else "NO_CALCULATION",
-        # Blockers are re-read against present evidence: a calculation keeps the
-        # ones it ran with, and replaying them hides that the value has arrived
-        "blocking_reasons": current_evidence_blockers(
-            list(latest.blocking_reasons) if latest else ["MISSING_VERIFIED_CVINTRA"],
-            claims,
-            has_calculation=latest is not None,
+        # Accepted N must not replay stale blockers (PRIMARY BE / CVintra) into Gaps.
+        "blocking_reasons": (
+            []
+            if latest
+            and str(getattr(latest, "status", "") or "").upper() in {"ACCEPTED", "APPROVED"}
+            else current_evidence_blockers(
+                list(latest.blocking_reasons) if latest else ["MISSING_VERIFIED_CVINTRA"],
+                claims,
+                has_calculation=latest is not None,
+            )
         ),
         "calculated_shown_as_approved": False,
         "study_mutated": False,
