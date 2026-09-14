@@ -10,8 +10,8 @@ from app.domain.decision_store import list_decisions
 from app.domain.research_evidence_store import list_claims
 from app.domain.sample_size_eligibility import current_evidence_blockers
 from app.domain.sample_size_engine import ui_sample_size_panel
-from app.domain.sample_size_store import list_calculations
-from app.domain.statistics_store import latest_plan as latest_stats_plan
+from app.domain.sample_size_store import latest_accepted_calculation, list_calculations
+from app.domain.statistics_store import latest_approved_plan, latest_plan as latest_stats_plan
 from app.domain.study_workspace import (
     aggregate_conflicts,
     build_preflight,
@@ -433,8 +433,8 @@ def compute_writer_progress(
         not in {"APPROVED", "REJECTED", "KEEP_CURRENT", "ACCEPTED", "RESOLVED"}
     ]
     calcs = list_calculations(study_id)
-    latest_ss = calcs[-1] if calcs else None
-    st = latest_stats_plan(study_id)
+    latest_ss = latest_accepted_calculation(study_id) or (calcs[-1] if calcs else None)
+    st = latest_approved_plan(study_id) or latest_stats_plan(study_id)
     drafts = list_protocol_drafts(study_id)
     pf = build_preflight(study_id, package_id=package_id)
     artifacts = list_artifacts(db, study_id)

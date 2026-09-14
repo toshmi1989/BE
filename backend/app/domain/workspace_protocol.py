@@ -1,6 +1,8 @@
-"""Phase 17 — Canonical workspace protocol preview + persistent DOCX artifacts.
+"""Phase 17 / 29 — Canonical workspace protocol preview + template-based DOCX artifacts.
 
-Does NOT use Legacy Project protocol generation path.
+Phase 29: Workspace calls the existing `docx_renderer.render_protocol_docx`
+(template BE_Protocol_Template_v2.0.docx). Does NOT use Legacy Project ORM as
+content authority. Does NOT invent a second renderer.
 """
 
 from __future__ import annotations
@@ -16,9 +18,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.domain.docx_contamination import (
+    assert_docx_clean_or_raise,
+    clear_product_specific_contamination,
+    scrub_contamination_xml_package,
+)
+from app.domain.docx_profile import DOCX_GENERATOR_VERSION, TEMPLATE_VERSION, get_template_profile
+from app.domain.docx_renderer import render_protocol_docx
+from app.domain.docx_stale_scrub import scrub_stale_template_products
 from app.domain.exceptions import ValidationError
+from app.domain.protocol_assembly import assemble_protocol
+from app.domain.protocol_constants import PROTOCOL_GENERATOR_VERSION
 from app.domain.protocol_dependency_stale import detect_stale_protocol_dependencies
+from app.domain.sample_size_store import latest_accepted_calculation
+from app.domain.statistics_store import latest_approved_plan
 from app.domain.study_workspace import append_audit, build_preflight, list_protocol_drafts
+from app.domain.template_contamination import contamination_preflight
+from app.domain.protocol_traceability import (
+    build_section_traceability,
+    enrich_field_bindings_with_sources,
+    scrub_docx_technical_enums,
+)
+from app.domain.workspace_assembly_context import (
+    build_workspace_assembly_context,
+    workspace_docx_blockers,
+)
 from app.domain.workspace_snapshots import latest_snapshot
 from app.models.workspace_persistence import WorkspaceProtocolArtifact, WorkspaceProtocolDraftRecord
 
@@ -107,7 +131,28 @@ def build_preview_from_draft(
             "label": "PK parameters",
             "value": facts.get("pk.parameters"),
         },
+        "pk.expected_tmax": {
+            "section": "PK",
+            "label": "Tmax",
+            "value": facts.get("pk.expected_tmax") or facts.get("pk.tmax"),
+        },
+        "product.pharmacology.mechanism": {
+            "section": "BACKGROUND",
+            "label": "Pharmacology",
+            "value": facts.get("product.pharmacology.mechanism"),
+        },
     }
+
+    # Phase 30.2 — section-level reverse traceability (DOCX section → claim/source)
+    traceability = build_section_traceability(study_key, facts=facts)
+    field_bindings = enrich_field_bindings_with_sources(field_bindings, traceability)
+
+    # Attach per-section source summary (writer «Источник»)
+    by_section: dict[str, list[dict[str, Any]]] = {}
+    for t in traceability:
+        by_section.setdefault(str(t["protocol_section_id"]), []).append(t)
+    for s in sections:
+        s["sources"] = by_section.get(str(s["code"]), [])
 
     mem_draft = mem[-1] if mem else None
     current_snap_id = (snap or {}).get("snapshot_id")
@@ -129,6 +174,7 @@ def build_preview_from_draft(
         "sections": sections,
         "tables": [],
         "field_bindings": field_bindings,
+        "section_traceability": traceability,
         "source": "ProtocolDraft+CanonicalSnapshot",
         "legacy_project_path": False,
         "stale_template_values": bool(stale.get("stale")),
@@ -158,9 +204,9 @@ def generate_docx_artifact(
     created_by: str,
     organization_id: UUID | None = None,
     force_warnings_ok: bool = False,
+    mode: str = "DRAFT",
 ) -> dict[str, Any]:
-    """Preflight → render → store artifact. Download must serve stored bytes."""
-    # Always regenerate server-side preflight; never trust client version state.
+    """Preflight → assemble from Workspace → existing template renderer → store artifact."""
     pf = build_preflight(study_key)
     snap = latest_snapshot(db, study_key)
     mem = list_protocol_drafts(study_key)
@@ -197,32 +243,122 @@ def generate_docx_artifact(
             field="protocol_dependencies",
             details={"stale_dependencies": preview.get("stale_dependencies")},
         )
+
     protocol_id = preview.get("protocol_id") or f"PROT-{study_key}-1"
     snap_id = preview.get("snapshot_id") or (snap or {}).get("snapshot_id")
     decision_set = list((mem_draft or {}).get("based_on_decisions") or [])
-    statistics_version = (mem_draft or {}).get("based_on_statistics")
-    sample_size_version = (mem_draft or {}).get("based_on_sample_size")
+    st = latest_approved_plan(study_key)
+    ss = latest_accepted_calculation(study_key)
+    statistics_version = (mem_draft or {}).get("based_on_statistics") or (st.id if st else None)
+    sample_size_version = (mem_draft or {}).get("based_on_sample_size") or (ss.id if ss else None)
 
-    doc = DocxDocument()
-    doc.add_heading(f"Protocol Draft — {study_key}", level=0)
-    doc.add_paragraph(f"Generated from snapshot {snap_id} (canonical workspace path).")
-    doc.add_paragraph("Recommendation ≠ approval. AI assistive only.")
-    for section in preview["sections"]:
-        doc.add_heading(section["title"], level=1)
-        doc.add_paragraph(str(section.get("body") or ""))
+    study_ctx = build_workspace_assembly_context(
+        study_key,
+        snapshot_payload=(snap or {}).get("payload") if isinstance(snap, dict) else None,
+    )
+    content_blockers = workspace_docx_blockers(study_ctx, study_id=study_key)
+    if content_blockers:
+        raise ValidationError(
+            "Недостаточно canonical/approved данных для заполнения шаблона протокола",
+            field="workspace_docx",
+            details={"blockers": content_blockers},
+        )
+
+    render_mode = str(mode or "DRAFT").upper()
+    contam = contamination_preflight(study_ctx, mode=render_mode)
+    if not contam.get("ok"):
+        raise ValidationError(
+            contam.get("message")
+            or "Template contains product-specific content that is not supported by the current study.",
+            field="CRITICAL_TEMPLATE_CONTAMINATION",
+            details={
+                "action": contam.get("action"),
+                "unmanaged_blocks": contam.get("unmanaged_blocks"),
+                "mode": render_mode,
+            },
+        )
+
+    assembled = assemble_protocol(
+        study_ctx,
+        blocking_validation=False,
+        validation_issues=[],
+        rules_version="workspace-1",
+        protocol_version=str((study_ctx.get("study") or {}).get("version") or "1"),
+    )
+    protocol_payload = {
+        "status": assembled.get("status") or "DRAFT",
+        "protocol_version": assembled.get("protocol_version") or "1",
+        "template_version": TEMPLATE_VERSION,
+        "rules_version": assembled.get("rules_version"),
+        "generator_version": assembled.get("generator_version") or PROTOCOL_GENERATOR_VERSION,
+        "consistency_snapshot": assembled.get("consistency_snapshot") or {},
+        "canonical_fingerprint": assembled.get("canonical_fingerprint"),
+        "sections": assembled.get("sections") or [],
+        "tables": assembled.get("tables") or [],
+        "references": assembled.get("references") or [],
+        "build_report": assembled.get("build_report") or {},
+    }
 
     artifact_id = f"ART-{uuid4().hex[:12]}"
-    safe_name = f"{artifact_id}.docx"
     org_part = str(organization_id or "public")
-    rel_key = f"{org_part}/{study_key}/{safe_name}"
     abs_path = _artifact_root() / org_part / study_key
     abs_path.mkdir(parents=True, exist_ok=True)
+
+    profile = get_template_profile()
+    result = render_protocol_docx(
+        protocol_payload=protocol_payload,
+        study_ctx=study_ctx,
+        mode=render_mode,
+        output_dir=abs_path,
+        project_slug="".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in study_key)[:40]
+        or "study",
+        protocol_version=str(protocol_payload.get("protocol_version") or "1"),
+    )
+    if result.status in {"BLOCKED", "FAILED"} or result.output_path is None:
+        raise ValidationError(
+            "Template DOCX render blocked or failed",
+            field="docx_renderer",
+            details={
+                "status": result.status,
+                "blocking_reasons": list(result.blocking_reasons or []),
+                "template_version": result.template_version or profile.template_version,
+                "generator_version": result.generator_version or DOCX_GENERATOR_VERSION,
+            },
+        )
+
+    doc = DocxDocument(str(result.output_path))
+    # Primary: semantic clear of product-specific template example content
+    contamination_clear = clear_product_specific_contamination(doc, study_ctx)
+    # Secondary: token scrub of leftover product-name strings
+    scrub = scrub_stale_template_products(doc, study_ctx)
+    if scrub.get("remaining"):
+        result.output_path.unlink(missing_ok=True)
+        raise ValidationError(
+            "В шаблоне остался пример Бозутиниб/Бозулиф — нет замены из canonical product",
+            field="stale_template_product",
+            details=scrub,
+        )
+    # Phase 30.2: never emit raw internal enums (e.g. ACCEPTED_CALCULATION) in final DOCX
+    technical_scrub = scrub_docx_technical_enums(doc)
+    # Bind filename to artifact id for stable storage_key
+    safe_name = f"{artifact_id}.docx"
     file_path = abs_path / safe_name
     doc.save(str(file_path))
+    if result.output_path != file_path and result.output_path.exists():
+        try:
+            result.output_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    xml_scrub = scrub_contamination_xml_package(file_path, study_ctx)
+
+    # Tertiary: full DOCX contamination scan — must be clean for non-bosutinib studies
+    contamination_scan = assert_docx_clean_or_raise(file_path, study_ctx)
+
     raw = file_path.read_bytes()
     sha = hashlib.sha256(raw).hexdigest()
+    rel_key = f"{org_part}/{study_key}/{safe_name}"
 
-    # Idempotency: same protocol + same hash → return existing
     existing = db.execute(
         select(WorkspaceProtocolArtifact).where(
             WorkspaceProtocolArtifact.protocol_id == protocol_id,
@@ -245,8 +381,8 @@ def generate_docx_artifact(
         generated_at=datetime.now(timezone.utc),
         snapshot_id=snap_id,
         decision_set=decision_set,
-        statistics_version=statistics_version,
-        sample_size_version=sample_size_version,
+        statistics_version=str(statistics_version) if statistics_version else None,
+        sample_size_version=str(sample_size_version) if sample_size_version else None,
     )
     db.add(row)
     db.commit()
@@ -256,10 +392,36 @@ def generate_docx_artifact(
         event="DOCX_ARTIFACT_CREATED",
         who=created_by,
         what=artifact_id,
-        new_value=sha,
+        new_value={
+            "sha256": sha,
+            "template_version": result.template_version or TEMPLATE_VERSION,
+            "generator_version": result.generator_version or DOCX_GENERATOR_VERSION,
+            "snapshot_id": snap_id,
+            "statistics_version": statistics_version,
+            "sample_size_version": sample_size_version,
+            "scrub": scrub,
+            "contamination_clear": contamination_clear,
+            "contamination_xml_scrub": xml_scrub,
+            "contamination_scan": contamination_scan,
+            "technical_enum_scrub": technical_scrub,
+            "renderer": "docx_renderer.render_protocol_docx",
+        },
         source=protocol_id,
     )
-    return _serialize_artifact(row)
+    out = _serialize_artifact(row)
+    out["template_version"] = result.template_version or TEMPLATE_VERSION
+    out["generator_version"] = result.generator_version or DOCX_GENERATOR_VERSION
+    out["renderer"] = "docx_renderer.render_protocol_docx"
+    out["template_id"] = profile.template_id
+    out["scrub"] = scrub
+    out["contamination_clear"] = contamination_clear
+    out["contamination_xml_scrub"] = xml_scrub
+    out["contamination_scan"] = contamination_scan
+    out["technical_enum_scrub"] = technical_scrub
+    out["section_traceability"] = build_section_traceability(study_key)
+    out["sections_assembled"] = len(protocol_payload.get("sections") or [])
+    out["tables_assembled"] = len(protocol_payload.get("tables") or [])
+    return out
 
 
 def get_artifact(db: Session, artifact_id: str) -> dict[str, Any] | None:

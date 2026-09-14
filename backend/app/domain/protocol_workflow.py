@@ -12,9 +12,11 @@ from uuid import uuid4
 from app.core.config import get_settings
 from app.domain.decision_context import build_context_from_package
 from app.domain.decision_engine import recompute_decisions
-from app.domain.decision_store import put_context, put_decisions
+from app.domain.decision_store import get_context, list_decisions, put_context, put_decisions
 from app.domain.exceptions import ValidationError
+from app.domain.protocol_input_sheet import preserved_facts, restore_preserved_facts
 from app.domain.sample_size_engine import calculate_sample_size_authoritative
+from app.domain.sample_size_store import list_calculations
 from app.domain.statistics_engine import golden_updcb_context, recompute_statistics_plan
 from app.domain.study_input_pipeline import load_real_fixture_package
 from app.domain.study_input_store import get_package, put_package
@@ -23,6 +25,7 @@ from app.domain.study_workspace import (
     build_preflight,
     build_workspace_summary,
     compute_readiness,
+    find_study_package,
     put_protocol_draft_version,
 )
 
@@ -59,13 +62,22 @@ def run_protocol_workflow(
     append_audit(study_id, event="WORKFLOW_START", who=created_by, what=f"run_protocol_workflow {wid}")
 
     # 1–4. Documents / package
+    # Golden fixture only when explicitly requested. Otherwise use the study's
+    # own package — never overwrite a real study with the UPDCB fixture.
     pkg = get_package(package_id) if package_id else None
-    if use_golden_fixture or pkg is None:
+    if pkg is None and not use_golden_fixture:
+        pkg = find_study_package(study_id, package_id)
+    if use_golden_fixture:
         pkg = load_real_fixture_package()
         if study_id and not pkg.study_id:
             pkg.study_id = study_id
         put_package(pkg)
         step("load_or_validate_documents", package_id=pkg.package_id, fixture_id=pkg.fixture_id)
+    elif pkg is None:
+        raise ValidationError(
+            "Нет загруженного пакета документов — загрузите файлы или отметьте демо-фикстуру",
+            field="documents",
+        )
     else:
         step("validate_source_documents", package_id=pkg.package_id)
 
@@ -94,48 +106,78 @@ def run_protocol_workflow(
     if run_research:
         step("research_skipped_or_optional", note="Research Center callable separately; not auto-verified")
 
-    # 10. Decision recommendations
+    # 10. Decision recommendations — keep expert facts and terminal approvals
+    previous = list_decisions(study_id, package_id=pkg.package_id)
+    if not previous:
+        previous = list_decisions(study_id)
+    kept = preserved_facts(study_id, pkg.package_id)
+    if not kept and get_context(study_id) is not None:
+        kept = preserved_facts(study_id)
     ctx = build_context_from_package(pkg, study_id=study_id or pkg.study_id)
+    restore_preserved_facts(ctx, kept)
     put_context(study_id, ctx, package_id=pkg.package_id)
-    decisions = recompute_decisions(ctx)
+    decisions = recompute_decisions(ctx, previous=previous)
     put_decisions(study_id, decisions, package_id=pkg.package_id)
     step(
         "decision_recommendations",
         count=len(decisions),
         blocked=sum(1 for d in decisions if d.status == "BLOCKED"),
         auto_approved=False,
+        preserved_expert_facts=len(kept),
+        preserved_terminal_decisions=sum(
+            1 for d in decisions if str(d.status).upper() in {"APPROVED", "REJECTED", "KEEP_CURRENT"}
+        ),
     )
 
     # 11. Sample size scenarios (authoritative calc may block without verified CV)
     ss_result = None
     try:
-        ss_result = calculate_sample_size_authoritative(
-            study_id=study_id,
-            design="STANDARD_2X2_CROSSOVER",
-            parameter="Cmax",
-            expected_ratio=0.95,
-            expected_ratio_source="EXPERT_INPUT",
-            alpha=0.05,
-            alpha_source="EXPLICIT_CONFIGURATION",
-            power=0.80,
-            power_source="EXPERT_INPUT",
-            dropout_percent=10.0,
-            dropout_source="EXPERT_INPUT",
-            inflation_method="DIVIDE_BY_RETAINMENT_RATE",
-            be_lower=0.80,
-            be_upper=1.25,
-            be_limits_source="EXPLICIT_CONFIGURATION",
-            current_protocol_n=56,
-            current_protocol_n_source="SYNOPSIS",
-            context=ctx.to_dict() if hasattr(ctx, "to_dict") else None,
-            created_by=created_by,
+        existing_ss = list_calculations(study_id)
+        accepted_ss = next(
+            (
+                c
+                for c in reversed(existing_ss)
+                if str(getattr(c, "status", "") or "").upper() in {"ACCEPTED", "APPROVED"}
+            ),
+            None,
         )
-        step(
-            "sample_size_scenarios",
-            status=ss_result.status,
-            blocking=ss_result.blocking_reasons,
-            approved=False,
-        )
+        if accepted_ss is not None:
+            ss_result = accepted_ss
+            step(
+                "sample_size_scenarios",
+                status=ss_result.status,
+                blocking=list(ss_result.blocking_reasons or []),
+                approved=True,
+                reused_accepted=True,
+            )
+        else:
+            ss_result = calculate_sample_size_authoritative(
+                study_id=study_id,
+                design="STANDARD_2X2_CROSSOVER",
+                parameter="Cmax",
+                expected_ratio=0.95,
+                expected_ratio_source="EXPERT_INPUT",
+                alpha=0.05,
+                alpha_source="EXPLICIT_CONFIGURATION",
+                power=0.80,
+                power_source="EXPERT_INPUT",
+                dropout_percent=10.0,
+                dropout_source="EXPERT_INPUT",
+                inflation_method="DIVIDE_BY_RETAINMENT_RATE",
+                be_lower=0.80,
+                be_upper=1.25,
+                be_limits_source="EXPLICIT_CONFIGURATION",
+                current_protocol_n=56,
+                current_protocol_n_source="SYNOPSIS",
+                context=ctx.to_dict() if hasattr(ctx, "to_dict") else None,
+                created_by=created_by,
+            )
+            step(
+                "sample_size_scenarios",
+                status=ss_result.status,
+                blocking=ss_result.blocking_reasons,
+                approved=False,
+            )
     except Exception as e:  # noqa: BLE001 — surface as step failure, do not crash workflow
         step("sample_size_scenarios", status="ERROR", error=str(e), approved=False)
 
@@ -155,7 +197,7 @@ def run_protocol_workflow(
         "statistics_recommendations",
         status=stats_plan.status,
         blocking=stats_plan.blocking_reasons,
-        approved=False,
+        approved=str(stats_plan.status).upper() == "APPROVED",
         scenarios=len(stats_plan.scenarios),
     )
 

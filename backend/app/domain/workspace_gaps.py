@@ -29,7 +29,10 @@ from app.domain.research_usability import apply_usability
 from app.domain.sample_size_eligibility import current_evidence_blockers
 from app.domain.sample_size_engine import ui_sample_size_panel
 from app.domain.sample_size_engine_classes import SAMPLE_SIZE_PK_PARAMETERS
-from app.domain.statistics_store import latest_plan as latest_statistics_plan
+from app.domain.statistics_store import (
+    latest_approved_plan,
+    latest_plan as latest_statistics_plan,
+)
 
 # Resolution routes
 RESEARCH = "RESEARCH"  # AI search in open sources → PROPOSED → expert verify
@@ -93,6 +96,51 @@ GAP_CATALOG: dict[str, dict[str, Any]] = {
         "unit": None,
         "numeric": False,
         "resolution": (MANUAL, RESEARCH),
+        "sources_hint": ("SmPC / ОХЛП", "Научная литература"),
+    },
+    "MISSING_PRODUCT_IDENTITY": {
+        "title": "Идентификация препарата (МНН / торговое имя)",
+        "why": "Нужна для шапки протокола и описания сравниваемых препаратов.",
+        "blocks": ("Product", "Template §2.1"),
+        "claim_field": "product.inn",
+        "fact_field": "product.inn",
+        "unit": None,
+        "numeric": False,
+        "resolution": (RESEARCH, MANUAL),
+        "sources_hint": ("SmPC / ОХЛП", "Регуляторные документы"),
+    },
+    "MISSING_PRODUCT_PHARMACOLOGY": {
+        "title": "Фармакология / механизм действия",
+        "why": "Секции §2.1 / §2.8 шаблона требуют verified pharmacology текущего препарата — не пример Бозутиниба.",
+        "blocks": ("Template pharmacology", "FINAL DOCX"),
+        "claim_field": "product.pharmacology",
+        "fact_field": "product.pharmacology",
+        "unit": None,
+        "numeric": False,
+        "resolution": (RESEARCH, MANUAL),
+        "note": "AI may only propose. FINAL blocked until VERIFIED.",
+        "sources_hint": ("SmPC / ОХЛП", "Регуляторные документы", "Научная литература"),
+    },
+    "MISSING_PRODUCT_CHEMISTRY": {
+        "title": "Химическая формула / молекулярная масса",
+        "why": "Блок химии в шаблоне product-specific — нельзя оставлять формулу примера.",
+        "blocks": ("Template chemistry",),
+        "claim_field": "product.chemical_formula",
+        "fact_field": "product.chemical_formula",
+        "unit": None,
+        "numeric": False,
+        "resolution": (RESEARCH, MANUAL),
+        "sources_hint": ("SmPC / ОХЛП", "Регуляторные документы"),
+    },
+    "MISSING_PRODUCT_SAFETY": {
+        "title": "Ключевые сведения по безопасности / взаимодействия",
+        "why": "Safety/interactions в протоколе должны опираться на verified источники по текущему препарату.",
+        "blocks": ("Safety",),
+        "claim_field": "product.safety_summary",
+        "fact_field": "product.safety_summary",
+        "unit": None,
+        "numeric": False,
+        "resolution": (RESEARCH, MANUAL),
         "sources_hint": ("SmPC / ОХЛП", "Научная литература"),
     },
     "MISSING_PRIMARY_BE_SELECTION": {
@@ -234,7 +282,7 @@ def _statistics_gap_codes(study_id: str) -> list[str]:
     chose PRIMARY BE / population (or approved the plan) reopened gaps the writer
     had already closed — so the live plan state wins over the stored reason list.
     """
-    plan = latest_statistics_plan(study_id)
+    plan = latest_approved_plan(study_id) or latest_statistics_plan(study_id)
     if plan is None:
         return []
     if str(getattr(plan, "status", "") or "").upper() == "APPROVED":
@@ -272,7 +320,7 @@ def _statistics_gap_codes(study_id: str) -> list[str]:
 
 def _expert_decision_resolved(study_id: str) -> list[dict[str, Any]]:
     """PRIMARY BE / population closed in Decisions — show them as resolved, not open."""
-    plan = latest_statistics_plan(study_id)
+    plan = latest_approved_plan(study_id) or latest_statistics_plan(study_id)
     if plan is None:
         return []
     out: list[dict[str, Any]] = []
@@ -318,6 +366,10 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
             origins.setdefault(canon, set()).add(origin)
 
     for d in list_decisions(study_id, package_id=package_id):
+        # Approved / rejected decisions are closed — their historical gap lists
+        # must not reopen the Gaps panel.
+        if str(getattr(d, "status", "") or "").upper() in {"APPROVED", "REJECTED", "KEEP_CURRENT"}:
+            continue
         label = DOMAIN_LABELS_RU.get(str(d.domain), str(d.domain))
         for g in d.knowledge_gaps or []:
             if isinstance(g, dict):
@@ -338,6 +390,17 @@ def collect_study_gaps(study_id: str, *, package_id: str | None = None) -> dict[
 
         for code in _statistics_gap_codes(study_id):
             add(code, "Statistics")
+
+        # Phase 30 — product pharmacology required for FINAL template content
+        from app.domain.template_contamination import has_verified_product_pharmacology
+        from app.domain.workspace_assembly_context import build_workspace_assembly_context
+
+        try:
+            ctx_probe = build_workspace_assembly_context(study_id, package_id=package_id)
+            if not has_verified_product_pharmacology(ctx_probe):
+                add("MISSING_PRODUCT_PHARMACOLOGY", "Template / FINAL")
+        except Exception:  # noqa: BLE001
+            add("MISSING_PRODUCT_PHARMACOLOGY", "Template / FINAL")
 
     claims = list_claims(study_id=study_id)
     tasks_by_code = {t.knowledge_gap_code: t for t in list_tasks(study_id)}
@@ -608,6 +671,21 @@ def _write_expert_fact(
     decisions = result["decisions"]
     if decisions:
         put_decisions(study_id, decisions, package_id=package_id)
+        # Keep protocol draft decision pointers current after expert gap fill so
+        # typing values does not strand the writer on STALE_DECISION_SET.
+        try:
+            from app.domain.study_workspace import patch_protocol_draft_based_on
+
+            patch_protocol_draft_based_on(
+                study_id,
+                decisions=[
+                    d.id
+                    for d in decisions
+                    if str(getattr(d, "status", "") or "").upper() != "SUPERSEDED"
+                ],
+            )
+        except Exception:  # noqa: BLE001
+            pass
     return {
         "applied_fields": applied,
         "recomputed_domains": result.get("recomputed_domains") or [],

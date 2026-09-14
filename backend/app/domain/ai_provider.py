@@ -206,6 +206,43 @@ class MockAIProvider(AIProvider):
                 m = re.search(r"(reference product[^\n.]{0,60})", text, re.I)
                 if m:
                     add("reference_product", m.group(1), m.group(1), 0.85)
+                m_inn = re.search(
+                    r"((?:INN|МНН|active substance|действующ(?:ее|его)\s+веществ[оа])\s*[:\-]?\s*"
+                    r"([A-Za-z][A-Za-z\-]{2,60}))",
+                    text,
+                    re.I,
+                )
+                if m_inn:
+                    add("inn", m_inn.group(2), m_inn.group(1), 0.9)
+
+            if "EXTRACT_PHARMACOLOGY" in prompt.prompt_id or "PHARMACOLOGY" in task_type:
+                m_mech = re.search(
+                    r"([^\n.]{0,20}(?:механизм действия|mechanism of action)[^\n.]{0,160})",
+                    text,
+                    re.I,
+                )
+                if m_mech:
+                    add("mechanism", m_mech.group(1).strip()[:200], m_mech.group(1).strip(), 0.88)
+                m_class = re.search(
+                    r"([^\n.]{0,20}(?:фармакологическ(?:ая|ой)\s+групп[аы]|JAK inhibitor|"
+                    r"ингибитор\s+Янус)[^\n.]{0,120})",
+                    text,
+                    re.I,
+                )
+                if m_class:
+                    add(
+                        "pharmacological_class",
+                        m_class.group(1).strip()[:200],
+                        m_class.group(1).strip(),
+                        0.87,
+                    )
+                m_pharm = re.search(
+                    r"([^\n.]{0,20}(?:pharmacolog|фармаколог)[^\n.]{0,180})",
+                    text,
+                    re.I,
+                )
+                if m_pharm:
+                    add("pharmacology", m_pharm.group(1).strip()[:220], m_pharm.group(1).strip(), 0.86)
 
         result = AIExtractionResult(claims=claims, not_found=len(claims) == 0, notes=None)
         return validate_claims_against_chunks(result, chunks)

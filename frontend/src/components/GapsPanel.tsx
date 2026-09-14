@@ -242,9 +242,11 @@ export function GapsPanel(props: GapsPanelProps) {
                       ) : null}
                       {p.excerpt ? <div className="muted">{String(p.excerpt).slice(0, 300)}</div> : null}
                       {p.verification_status === "VERIFIED" ? (
-                        <span className="status-pill status-green">Подтверждено</span>
+                        <span className="status-pill status-green">✓ Verified by expert</span>
                       ) : (
-                        <button
+                        <>
+                          <span className="status-pill status-yellow">🤖 AI proposal</span>{" "}
+                          <button
                           type="button"
                           disabled={disabled || !canApprove}
                           title={canApprove ? undefined : "Требуется право approve_decisions"}
@@ -261,6 +263,7 @@ export function GapsPanel(props: GapsPanelProps) {
                         >
                           Подтвердить
                         </button>
+                        </>
                       )}
                     </li>
                   ))}

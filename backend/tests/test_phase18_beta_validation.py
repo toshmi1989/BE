@@ -60,8 +60,8 @@ def client():
 
 
 def test_version_023():
-    assert Settings().app_version == "0.33.0"
-    assert PROTOCOL_GENERATOR_VERSION == "0.33.0"
+    assert Settings().app_version == "0.35.2"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.2"
 
 
 def test_registry_has_twelve_cases_with_limitation():

@@ -36,6 +36,7 @@ from app.domain.sample_size_models import (
 from app.domain.sample_size_recommendation import build_recommendation
 from app.domain.sample_size_store import (
     list_calculations,
+    latest_accepted_calculation,
     next_version_number,
     put_calculation,
 )
@@ -125,12 +126,9 @@ def calculate_sample_size_authoritative(
     # Workflow draft assembly must keep an expert-accepted N; explicit Calculate
     # in the UI passes force_new=True when a fresh run is intended.
     if not force_new:
-        existing = list_calculations(study_id)
-        latest_accepted = existing[-1] if existing else None
-        if latest_accepted is not None and str(
-            getattr(latest_accepted, "status", "") or ""
-        ).upper() in {"ACCEPTED", "APPROVED"}:
-            return latest_accepted
+        accepted = latest_accepted_calculation(study_id)
+        if accepted is not None:
+            return accepted
 
     blockers: list[str] = []
     inputs: list[ProvenancedInput] = []
@@ -507,7 +505,7 @@ def calculate_sample_size_authoritative(
 def ui_sample_size_panel(study_id: str, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Decision Center Sample Size section contract — calculated ≠ approved."""
     calcs = list_calculations(study_id)
-    latest = calcs[-1] if calcs else None
+    latest = latest_accepted_calculation(study_id) or (calcs[-1] if calcs else None)
     cur_n, cur_src = resolve_current_protocol_n(
         current_protocol_n=None,
         current_protocol_n_source=None,

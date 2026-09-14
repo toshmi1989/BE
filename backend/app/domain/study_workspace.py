@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from app.domain.decision_store import decision_center_summary, get_context, list_decisions
 from app.domain.research_evidence_store import list_claims, list_conflicts as list_research_conflicts, list_tasks
-from app.domain.sample_size_store import list_calculations
-from app.domain.statistics_store import latest_plan as latest_stats_plan
+from app.domain.sample_size_store import latest_accepted_calculation, list_calculations
+from app.domain.statistics_store import latest_approved_plan, latest_plan as latest_stats_plan
 from app.domain.statistics_store import list_plans as list_stats_plans
 from app.domain.study_input_store import get_package, list_packages, package_readiness
 
@@ -297,8 +297,8 @@ def compute_readiness(study_id: str, *, package_id: str | None = None) -> dict[s
     decisions = list_decisions(study_id)
     blocked_decisions = [d for d in decisions if d.status == "BLOCKED"]
     ss = list_calculations(study_id)
-    latest_ss = ss[-1] if ss else None
-    st = latest_stats_plan(study_id)
+    latest_ss = latest_accepted_calculation(study_id) or (ss[-1] if ss else None)
+    st = latest_approved_plan(study_id) or latest_stats_plan(study_id)
     pkg_ready = package_readiness(pkg) if pkg else None
 
     critical_blockers: list[dict[str, Any]] = []
@@ -631,7 +631,7 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         "No unresolved critical conflicts",
         not any(c["status"] == "OPEN" and c["severity"] == "CRITICAL" for c in conflicts),
     )
-    st = latest_stats_plan(study_id)
+    st = latest_approved_plan(study_id) or latest_stats_plan(study_id)
     add(
         "STATISTICS",
         "PRIMARY_BE_APPROVED",
@@ -639,14 +639,15 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         "PRIMARY_BE / statistics plan approved",
         bool(st and st.status == "APPROVED"),
     )
-    ss = list_calculations(study_id)
-    latest_ss = ss[-1] if ss else None
+    latest_ss = latest_accepted_calculation(study_id) or (
+        list_calculations(study_id)[-1] if list_calculations(study_id) else None
+    )
     add(
         "SAMPLE_SIZE",
         "SAMPLE_SIZE_APPROVED",
         "CRITICAL",
         "Sample size approved",
-        bool(latest_ss and latest_ss.status == "ACCEPTED"),
+        bool(latest_ss and str(latest_ss.status).upper() in {"ACCEPTED", "APPROVED"}),
     )
     pkg = _find_package(study_id, package_id)
     add(
@@ -693,20 +694,51 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
     else:
         stale = {"stale": False, "reasons": []}
 
+    # Phase 29.2 — product-specific template contamination (semantic, not name-only)
+    from app.domain.template_contamination import contamination_preflight
+    from app.domain.workspace_assembly_context import build_workspace_assembly_context
+
+    study_ctx = build_workspace_assembly_context(study_id, package_id=package_id)
+    contam_draft = contamination_preflight(study_ctx, mode="DRAFT")
+    contam_final = contamination_preflight(study_ctx, mode="FINAL")
+    add(
+        "TEMPLATE",
+        "CRITICAL_TEMPLATE_CONTAMINATION",
+        "CRITICAL",
+        contam_draft.get("message")
+        or "Template contains product-specific content that is not supported by the current study.",
+        bool(contam_draft.get("ok")),
+    )
+    # Attach action for UI
+    if checks:
+        checks[-1]["action"] = contam_draft.get("action")
+        checks[-1]["details"] = {
+            "unmanaged_blocks": contam_draft.get("unmanaged_blocks"),
+            "clearable_blocks": contam_draft.get("clearable_blocks"),
+            "final_ok": contam_final.get("ok"),
+            "final_unmanaged": contam_final.get("unmanaged_blocks"),
+        }
+
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
     out = {
         "study_id": study_id,
         "categories": sorted({c["category"] for c in checks}),
         "checks": checks,
         "critical_blockers": critical_fail,
-        "can_finalize": len(critical_fail) == 0 and ready["can_finalize"],
+        "can_finalize": len(critical_fail) == 0
+        and ready["can_finalize"]
+        and bool(contam_final.get("ok")),
         "can_generate_docx": len([c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]) == 0,
         "readiness": ready["readiness"],
         "readiness_label": ready["readiness_label"],
         "study_mutated": False,
+        "template_contamination": {
+            "draft": contam_draft,
+            "final": contam_final,
+        },
         "message": (
             "FINAL blocked by critical checks"
-            if critical_fail
+            if critical_fail or not contam_final.get("ok")
             else ("DOCX generation allowed (warnings may remain)" if ready["warnings"] else "Preflight passed")
         ),
         "stale_dependencies": stale,

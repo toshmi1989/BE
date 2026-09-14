@@ -1651,6 +1651,61 @@ export function resolveStudyGapManually(
   });
 }
 
+export type ProductEvidenceProposal = {
+  claim_id: string;
+  field: string;
+  value: unknown;
+  unit?: string | null;
+  source_id?: string | null;
+  location?: string | null;
+  excerpt?: string | null;
+  confidence?: string | null;
+  ai_confidence_note?: string;
+  applicability?: string | null;
+  status: string;
+  extraction_method?: string | null;
+  badge?: string;
+};
+
+export type ProductEvidencePanel = {
+  study_id: string;
+  proposals: ProductEvidenceProposal[];
+  counts: { total: number; proposed: number; verified: number; rejected: number };
+  pharmacology_verified?: boolean;
+  final_gate?: { code: string; clears_when: string; unverified_ai_cannot_clear: boolean };
+};
+
+export function listProductEvidence(studyId: string) {
+  return request<ProductEvidencePanel>(`/api/studies/${studyId}/product-evidence`);
+}
+
+export function extractProductEvidence(
+  studyId: string,
+  body?: { force_mock?: boolean; actor?: string; package_id?: string },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/product-evidence/extract`, {
+    method: "POST",
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export function reviewProductEvidence(
+  studyId: string,
+  body: {
+    claim_id: string;
+    action: "verify" | "reject";
+    reviewer?: string;
+    applicability?: string;
+    applicability_reason?: string;
+    comment?: string;
+  },
+) {
+  return request<Record<string, unknown>>(`/api/studies/${studyId}/product-evidence/review`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function requestDecisionEvidence(
   studyId: string,
   body: { decision_id?: string; question?: string; reason: string; actor?: string },

@@ -95,12 +95,16 @@ _reg("DOUBLE_BLIND", "двойное слепое исследование", con
 _reg("SINGLE_BLIND", "простое слепое исследование", context="blinding")
 _reg("SINGLE_STUDY", "на основании одного исследования", context="selection_method")
 _reg("META_ANALYSIS", "мета-анализ", context="selection_method")
+_reg("ACCEPTED_CALCULATION", "Расчёт подтверждён", context="selection_method")
+_reg("ACCEPTED_CALCULATION", "Расчёт подтверждён", context="general")
+_reg("EXPERT_INPUT", "ввод эксперта", context="selection_method")
+_reg("EXPLICIT_CONFIGURATION", "явная конфигурация", context="selection_method")
 _reg("SmPC", "инструкция по медицинскому применению (SmPC)", context="source_type")
 _reg("GUIDELINE", "руководство / guideline", context="source_type")
 _reg("PUBLICATION", "публикация", context="source_type")
 _reg("REGULATORY", "регуляторный источник", context="source_type")
 
-# Known raw enums that must never appear verbatim in DOCX body
+# Known raw enums that must never appear verbatim in DOCX body / writer-facing text
 RAW_ENUM_CODES: frozenset[str] = frozenset(
     {
         "CROSSOVER_2X2",
@@ -119,8 +123,27 @@ RAW_ENUM_CODES: frozenset[str] = frozenset(
         "FINAL",
         "NOT_PURCHASED",
         "PURCHASED",
+        "ACCEPTED_CALCULATION",
+        "EXPERT_INPUT",
+        "EXPLICIT_CONFIGURATION",
+        "PRIMARY_BE",
+        "SECONDARY_PK",
+        "PER_PROTOCOL",
+        "STANDARD_2X2_CROSSOVER",
     }
 )
+
+# Human labels for technical tokens that may leak into DOCX (internal enum unchanged)
+TECHNICAL_TOKEN_LABELS_RU: dict[str, str] = {
+    "ACCEPTED_CALCULATION": "Расчёт подтверждён",
+    "EXPERT_INPUT": "ввод эксперта",
+    "EXPLICIT_CONFIGURATION": "явная конфигурация",
+    "PRIMARY_BE": "основной endpoint биоэквивалентности",
+    "SECONDARY_PK": "вторичный PK-параметр",
+    "PER_PROTOCOL": "популяция per protocol",
+    "STANDARD_2X2_CROSSOVER": "стандартный перекрёстный дизайн 2×2",
+    "EXPERT_DECISION": "решение эксперта",
+}
 
 
 def resolve_display(
@@ -175,6 +198,23 @@ def find_raw_enums_in_text(text: str) -> list[str]:
         if re.search(rf"(?<![A-Za-z0-9_]){re.escape(code)}(?![A-Za-z0-9_])", text or ""):
             found.append(code)
     return sorted(set(found))
+
+
+def scrub_technical_tokens_in_text(text: str, *, language: str = "ru") -> tuple[str, list[str]]:
+    """Replace known internal enum leaks with human labels. Returns (text, replaced_codes)."""
+    import re
+
+    if not text:
+        return text or "", []
+    replaced: list[str] = []
+    out = text
+    for code, label in TECHNICAL_TOKEN_LABELS_RU.items():
+        human = resolve_display(code, language=language, fallback=label)
+        pattern = rf"(?<![A-Za-z0-9_]){re.escape(code)}(?![A-Za-z0-9_])"
+        if re.search(pattern, out):
+            out = re.sub(pattern, human, out)
+            replaced.append(code)
+    return out, sorted(set(replaced))
 
 
 # Alias used in requirements

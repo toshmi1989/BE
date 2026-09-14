@@ -46,6 +46,14 @@ def latest_plan(study_id: str) -> StatisticsPlan | None:
     return rows[-1] if rows else None
 
 
+def latest_approved_plan(study_id: str) -> StatisticsPlan | None:
+    """Prefer an expert-approved plan over a newer DRAFT tip-of-list."""
+    for plan in reversed(list_plans(study_id)):
+        if str(getattr(plan, "status", "") or "").upper() == "APPROVED":
+            return plan
+    return None
+
+
 def next_plan_version(study_id: str) -> int:
     rows = list_plans(study_id)
     if not rows:

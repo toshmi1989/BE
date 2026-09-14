@@ -874,10 +874,13 @@ def refresh_context_from_package(study_id: str, package: Any) -> dict[str, Any]:
     from app.domain.decision_engine import recompute_decisions
 
     preserved = preserved_facts(study_id, package.package_id)
+    previous = list_decisions(study_id, package_id=package.package_id)
+    if not previous:
+        previous = list_decisions(study_id)
     ctx = build_context_from_package(package, study_id=study_id or package.study_id)
     restore_preserved_facts(ctx, preserved)
     put_context(study_id, ctx, package_id=package.package_id)
-    decisions = recompute_decisions(ctx)
+    decisions = recompute_decisions(ctx, previous=previous)
     put_decisions(study_id, decisions, package_id=package.package_id)
     return {"package_id": package.package_id, "decisions": len(decisions)}
 

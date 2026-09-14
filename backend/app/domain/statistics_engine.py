@@ -35,6 +35,7 @@ from app.domain.statistics_normalize import (
     parse_confidence_level,
 )
 from app.domain.statistics_store import (
+    latest_approved_plan,
     latest_plan,
     list_plans,
     mark_superseded,
@@ -144,12 +145,11 @@ def recompute_statistics_plan(
 
     # Draft / workflow recomputes must not silently replace an expert-approved plan
     # (that reopened PRIMARY BE / population gaps after «Собрать черновик»).
-    prev_approved = latest_plan(study_id)
+    prev_approved = latest_approved_plan(study_id)
     if (
         supersede_previous
         and not force_supersede_approved
         and prev_approved is not None
-        and str(prev_approved.status or "").upper() == "APPROVED"
     ):
         return prev_approved
 
@@ -670,7 +670,7 @@ def apply_expert_modifications(
 
 
 def ui_statistics_panel(study_id: str, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
-    plan = latest_plan(study_id)
+    plan = latest_approved_plan(study_id) or latest_plan(study_id)
     approved = bool(plan and plan.status == "APPROVED")
     # Stale blockers on an approved plan must not look like open work
     raw_blockers = list(plan.blocking_reasons) if plan and not approved else []

@@ -36,6 +36,7 @@ import { useAuth } from "../auth/AuthContext";
 import { DecisionForm } from "../components/DecisionForm";
 import { DecisionPanel } from "../components/DecisionPanel";
 import { GapsPanel } from "../components/GapsPanel";
+import { ProductEvidenceReview } from "../components/ProductEvidenceReview";
 import { SampleSizeCalcForm, StatisticsPlanForm } from "../components/EngineForms";
 import { StudyList } from "../components/StudyList";
 import { Dashboard } from "./Dashboard";
@@ -491,7 +492,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
       })) as Record<string, unknown>;
       consumeWorkflowResponse(out);
       setNotice("Черновик протокола подготовлен.");
-      await refreshSlices(["protocol", "progress", "core"], activeStudy);
+      await refreshSlices(["protocol", "progress", "core", "gaps", "engines", "decisions"], activeStudy);
     });
   }
 
@@ -1612,6 +1613,16 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 onGoDecisions={() => goTab("decisions")}
               />
             )}
+            <ProductEvidenceReview
+              studyId={activeStudy}
+              reviewer={reviewer}
+              canApprove={canApproveDecisions}
+              busy={ops.decision.busy}
+              onNotice={setNotice}
+              onRefresh={async () => {
+                await refreshSlices(["gaps", "decisions", "engines", "progress", "core"]);
+              }}
+            />
           </section>
         )}
 
@@ -1898,31 +1909,81 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                     <article key={String(s.code || i)} id={`sec-${String(s.code || i)}`} className="preview-section">
                       <h4>{String(s.title || s.code)}</h4>
                       <p>{String(s.body || s.content || "")}</p>
+                      {Array.isArray(s.sources) && (s.sources as Array<Record<string, unknown>>).length > 0 && (
+                        <details className="preview-sources">
+                          <summary>Источник</summary>
+                          <ul className="muted small">
+                            {(s.sources as Array<Record<string, unknown>>).slice(0, 8).map((src, j) => {
+                              const prov = (src.provenance || {}) as Record<string, unknown>;
+                              const labels = (prov.labels || {}) as Record<string, unknown>;
+                              return (
+                                <li key={String(src.claim_id || src.canonical_field || j)}>
+                                  <div>
+                                    <strong>{String(src.canonical_field || "—")}</strong>
+                                    {src.value != null ? `: ${String(src.value)}` : ""}
+                                  </div>
+                                  <div>
+                                    Source: {String(src.source_label || src.source_type || "—")}
+                                    {src.claim_id ? ` · Claim: ${String(src.claim_id)}` : ""}
+                                  </div>
+                                  <div>Status: {humanLabel(src.claim_status || "—")}</div>
+                                  <div>
+                                    {[labels.ai_proposal, labels.expert_verified, labels.approved]
+                                      .filter(Boolean)
+                                      .map(String)
+                                      .join(" · ") || "—"}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </details>
+                      )}
                     </article>
                   ))}
                 </div>
                 <aside className="preview-side">
-                  <h4>Source / field info</h4>
-                  {Object.entries(bindings).map(([field, meta]) => (
-                    <div key={field} className="preview-binding">
-                      <span className="muted small">{String(meta.label || field)}</span>
-                      <button
-                        type="button"
-                        className="linkish"
-                        onClick={async () => {
-                          setPreviewField(field);
-                          if (!activeStudy) return;
-                          try {
-                            setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
-                          } catch (err: unknown) {
-                            setGlobalError(formatApiError(err, "Field detail failed"));
-                          }
-                        }}
-                      >
-                        {meta.value == null ? "—" : String(meta.value)}
-                      </button>
-                    </div>
-                  ))}
+                  <h4>Источник / field info</h4>
+                  {Object.entries(bindings).map(([field, meta]) => {
+                    const src = (meta.source || {}) as Record<string, unknown>;
+                    const prov = (src.provenance || {}) as Record<string, unknown>;
+                    const labels = (prov.labels || {}) as Record<string, unknown>;
+                    return (
+                      <div key={field} className="preview-binding">
+                        <span className="muted small">{String(meta.label || field)}</span>
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={async () => {
+                            setPreviewField(field);
+                            if (!activeStudy) return;
+                            try {
+                              setFieldDetail(await getCanonicalFactDetail(activeStudy, field));
+                            } catch (err: unknown) {
+                              setGlobalError(formatApiError(err, "Field detail failed"));
+                            }
+                          }}
+                        >
+                          {meta.value == null ? "—" : String(meta.value)}
+                        </button>
+                        {src.label || src.claim_id ? (
+                          <div className="muted small preview-source-line">
+                            Источник: {String(src.label || src.source_type || "—")}
+                            {src.claim_id ? ` · ${String(src.claim_id)}` : ""}
+                            {src.status ? ` · ${humanLabel(src.status)}` : ""}
+                            {labels.ai_proposal || labels.expert_verified ? (
+                              <div>
+                                {[labels.ai_proposal, labels.expert_verified, labels.approved]
+                                  .filter(Boolean)
+                                  .map(String)
+                                  .join(" · ")}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                   {previewField && fieldDetail && (
                     <div className="preview-field-detail">
                       <h5>{previewField}</h5>

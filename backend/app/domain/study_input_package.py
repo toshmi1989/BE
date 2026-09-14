@@ -113,7 +113,7 @@ class StudyInputPackage:
             raise ValueError(f"Invalid package status: {self.status}")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "package_id": self.package_id,
             "status": self.status,
             "study_id": self.study_id,
@@ -133,12 +133,21 @@ class StudyInputPackage:
             "ingestion_runs": list(self.ingestion_runs),
             "study_mutated": False,
         }
+        # Preserve binary-ingestion text across DB round-trips (product evidence needs it)
+        cache = getattr(self, "_ingest_cache", None)
+        if isinstance(cache, dict) and cache:
+            payload["ingest_cache"] = {
+                str(doc_id): {"text": str((blob or {}).get("text") or "")}
+                for doc_id, blob in cache.items()
+                if isinstance(blob, dict)
+            }
+        return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StudyInputPackage":
         docs = [StudyInputDocument(**d) for d in (data.get("documents") or [])]
         cands = [CandidateStudyValue(**c) for c in (data.get("candidates") or [])]
-        return cls(
+        pkg = cls(
             package_id=data["package_id"],
             status=data.get("status") or "DRAFT",
             study_id=data.get("study_id"),
@@ -157,6 +166,21 @@ class StudyInputPackage:
             notes=data.get("notes"),
             ingestion_runs=list(data.get("ingestion_runs") or []),
         )
+        ic = data.get("ingest_cache")
+        if isinstance(ic, dict) and ic:
+            setattr(
+                pkg,
+                "_ingest_cache",
+                {
+                    str(k): {
+                        "text": str((v or {}).get("text") or ""),
+                        "pages": (v or {}).get("pages"),
+                    }
+                    for k, v in ic.items()
+                    if isinstance(v, dict)
+                },
+            )
+        return pkg
 
 
 def verify_candidate(candidate: CandidateStudyValue, *, reviewer: str) -> CandidateStudyValue:

@@ -65,6 +65,17 @@ PROMPTS: dict[str, PromptTemplate] = {
     "EXTRACT_SAFETY": PromptTemplate(
         "EXTRACT_SAFETY", "v1", _SYSTEM, _USER.replace("{focus}", "safety statements")
     ),
+    "EXTRACT_PHARMACOLOGY": PromptTemplate(
+        "EXTRACT_PHARMACOLOGY",
+        "v1",
+        _SYSTEM,
+        _USER.replace(
+            "{focus}",
+            "mechanism of action, pharmacological class, therapeutic information, "
+            "chemical formula, molecular weight, contraindications, interactions — "
+            "only for the product described in the chunks; never invent",
+        ),
+    ),
     "FIND_CONFLICTS": PromptTemplate(
         "FIND_CONFLICTS",
         "v1",

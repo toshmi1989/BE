@@ -2,7 +2,8 @@
 
 Reported from a live session: entered values were lost or not recorded, and the
 pipeline kept sending the writer back to the same step, so protocol generation
-was never reachable. This walks the API exactly as the UI does.
+was never reachable. This walks the API exactly as the UI does — including the
+remaining expert gates (dose, statistics, sample size) required by preflight.
 """
 
 from __future__ import annotations
@@ -80,14 +81,103 @@ def test_typed_values_unblock_the_steps_that_needed_them(client: TestClient):
 
 def test_protocol_generation_is_reachable_after_typing_the_values(client: TestClient):
     _bind_golden(client)
+    actor = "writer@example.test"
     for code, body in MANUAL_VALUES.items():
         client.post(
             f"/api/studies/{STUDY}/gaps/{code}/resolve-manual",
-            json={**body, "rationale": "Значение из SmPC", "actor": "writer@example.test"},
+            json={**body, "rationale": "Значение из SmPC", "actor": actor},
         )
+
+    # Critical dose conflict remains expert-controlled
+    dose = client.post(
+        f"/api/studies/{STUDY}/decisions/expert",
+        json={
+            "question": "reference_product.dose conflict",
+            "selected_option": "15 mg",
+            "status": "APPROVED",
+            "rationale": "SmPC-aligned expert resolution",
+        },
+    )
+    assert dose.status_code == 200, dose.text
+
+    stats = client.post(
+        f"/api/studies/{STUDY}/statistics/recompute",
+        json={
+            "primary_be_parameters": ["Cmax", "AUC0-t"],
+            "primary_be_source": "EXPERT_DECISION",
+            "analysis_population": "PER_PROTOCOL",
+            "analysis_population_source": "EXPERT_DECISION",
+            "created_by": actor,
+        },
+    )
+    assert stats.status_code == 200, stats.text
+    plan_id = (client.get(f"/api/studies/{STUDY}/statistics").json().get("latest") or {}).get("id")
+    assert plan_id
+    assert client.post(
+        f"/api/statistics/{plan_id}/request-review", json={"reviewer": actor}
+    ).status_code == 200
+    assert (
+        client.post(
+            f"/api/statistics/{plan_id}/approve",
+            json={"reviewer": actor, "comment": "manual-loop"},
+        ).status_code
+        == 200
+    )
+
+    ss = client.post(
+        f"/api/studies/{STUDY}/sample-size/calculate",
+        json={
+            "design": "STANDARD_2X2_CROSSOVER",
+            "parameters": ["Cmax"],
+            "expected_ratio": 0.95,
+            "expected_ratio_source": "EXPERT_INPUT",
+            "power": 0.8,
+            "power_source": "EXPERT_INPUT",
+            "alpha": 0.05,
+            "alpha_source": "EXPERT_INPUT",
+            "be_lower": 0.8,
+            "be_upper": 1.25,
+            "be_limits_source": "EXPLICIT_CONFIGURATION",
+            "dropout_percent": 10,
+            "dropout_source": "EXPERT_INPUT",
+            "inflation_method": "DIVIDE_BY_RETAINMENT_RATE",
+            "created_by": actor,
+        },
+    )
+    assert ss.status_code == 200, ss.text
+    calc_id = client.get(f"/api/studies/{STUDY}/sample-size/panel").json().get(
+        "latest_calculation_id"
+    )
+    assert calc_id
+    assert client.post(
+        f"/api/sample-size/calculations/{calc_id}/request-review",
+        json={"reviewer": actor},
+    ).status_code == 200
+    assert (
+        client.post(
+            f"/api/sample-size/calculations/{calc_id}/approve",
+            json={
+                "reviewer": actor,
+                "decision": "ACCEPT_CALCULATION",
+                "comment": "manual-loop",
+            },
+        ).status_code
+        == 200
+    )
+
+    # Refresh draft against approved tip (writer re-assemble)
+    wf = client.post(
+        f"/api/studies/{STUDY}/workflow/run",
+        json={
+            "use_golden_fixture": False,
+            "prepare_protocol_draft": True,
+            "created_by": actor,
+        },
+    )
+    assert wf.status_code == 200, wf.text
 
     docx = client.post(
         f"/api/studies/{STUDY}/protocol/generate-docx",
-        json={"created_by": "writer@example.test"},
+        json={"created_by": actor, "confirm_warnings": True},
     )
     assert docx.status_code == 200, f"protocol generation refused: {docx.text}"

@@ -6,6 +6,7 @@ May supply verified numeric context for recompute only.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.domain.decision_context import DecisionContext
@@ -32,9 +33,32 @@ def apply_verified_research_to_context(
             continue
         if c.applicability in {"LOW", "NOT_APPLICABLE", "UNKNOWN"}:
             continue
-        if c.field_path in {"pk.t_half", "pk.expected_t_half"} and c.measurement:
-            # Only point values — ranges do not set half_life scalar
-            if c.measurement.get("statistic_type") == "RANGE":
+        if c.field_path in {"pk.t_half", "pk.expected_t_half"} and (
+            c.measurement or c.value is not None
+        ):
+            # Planning half-life may be a SmPC range (e.g. 9–14 h). Ranges populate
+            # structured facts for protocol text but do NOT set washout scalar.
+            is_range = bool(
+                (c.measurement or {}).get("statistic_type") == "RANGE"
+                or (
+                    isinstance(c.value, str)
+                    and re.search(r"[–\-—to]", c.value)
+                )
+            )
+            if is_range:
+                val = c.value
+                if val is None and c.measurement:
+                    val = c.measurement.get("range") or c.measurement.get("value")
+                if val in (None, "", []):
+                    continue
+                ctx.structured_facts["pk.expected_t_half"] = val
+                ctx.structured_facts["pk.t_half"] = val
+                ctx.fact_statuses["pk.expected_t_half"] = "VERIFIED"
+                ctx.fact_statuses["pk.t_half"] = "VERIFIED"
+                ctx.fact_sources["pk.expected_t_half"] = "RESEARCH_EVIDENCE"
+                ctx.fact_sources["pk.t_half"] = "RESEARCH_EVIDENCE"
+                applied.extend(["pk.expected_t_half", "pk.t_half"])
+                # MISSING_HALF_LIFE_FOR_WASHOUT remains — washout needs expert point
                 continue
             if c.value is not None and isinstance(c.value, (int, float)):
                 ctx.half_life = float(c.value)
@@ -49,6 +73,24 @@ def apply_verified_research_to_context(
                 ctx.knowledge_gaps = [
                     g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_HALF_LIFE_FOR_WASHOUT"
                 ]
+            elif isinstance(c.value, str) and c.value.strip():
+                # Point-like string without range separators
+                raw = c.value.strip().replace(",", ".")
+                m = re.search(r"(\d+(?:\.\d+)?)", raw)
+                if m:
+                    ctx.half_life = float(m.group(1))
+                    ctx.structured_facts["pk.expected_t_half"] = float(m.group(1))
+                    ctx.structured_facts["pk.t_half"] = float(m.group(1))
+                    ctx.fact_statuses["pk.expected_t_half"] = "VERIFIED"
+                    ctx.fact_statuses["pk.t_half"] = "VERIFIED"
+                    ctx.fact_sources["pk.expected_t_half"] = "RESEARCH_EVIDENCE"
+                    ctx.fact_sources["pk.t_half"] = "RESEARCH_EVIDENCE"
+                    applied.extend(["pk.expected_t_half", "pk.t_half"])
+                    ctx.knowledge_gaps = [
+                        g
+                        for g in ctx.knowledge_gaps
+                        if g.get("code") != "MISSING_HALF_LIFE_FOR_WASHOUT"
+                    ]
         elif c.field_path in {"pk.Tmax", "pk.expected_tmax"} and (
             isinstance(c.value, (int, float))
             or (isinstance(c.value, str) and c.value.strip())
@@ -104,6 +146,71 @@ def apply_verified_research_to_context(
                 applied.append("cv_intra")
                 ctx.knowledge_gaps = [
                     g for g in ctx.knowledge_gaps if g.get("code") != "MISSING_CVINTRA"
+                ]
+        elif c.field_path in {
+            "product.pharmacology",
+            "product.mechanism",
+            "product.pharmacological_class",
+            "product.chemical_formula",
+            "product.molecular_weight",
+            "product.inn",
+            "product.trade_name",
+            "product.contraindications",
+            "product.interactions",
+            "product.safety_summary",
+            "food.effect_summary",
+        }:
+            # Phase 30 — verified product-specific facts (never from PROPOSED AI alone)
+            if c.usability != "USABLE_FOR_DECISION" and c.applicability not in {
+                "DIRECT",
+                "HIGH",
+                "MODERATE",
+            }:
+                # Still allow VERIFIED + expert-set applicability HIGH/DIRECT via usability
+                if not (
+                    c.verification_status == "VERIFIED"
+                    and c.applicability in {"DIRECT", "HIGH", "MODERATE"}
+                ):
+                    continue
+            if c.value in (None, "", []):
+                continue
+            fp = str(c.field_path)
+            ctx.structured_facts[fp] = c.value
+            ctx.fact_statuses[fp] = "VERIFIED"
+            ctx.fact_sources[fp] = "VERIFIED_EVIDENCE"
+            applied.append(fp)
+            # Aggregate flag for contamination FINAL gate — only when all required
+            # pharmacology fields are present on context after this apply.
+            from app.domain.product_knowledge import PRODUCT_KNOWLEDGE_FIELDS
+
+            needed = [
+                f.field_path
+                for f in PRODUCT_KNOWLEDGE_FIELDS
+                if f.required_for_final_pharmacology
+            ]
+            if needed and all(
+                ctx.structured_facts.get(k) not in (None, "", [], {}) for k in needed
+            ):
+                ctx.structured_facts["evidence.pharmacology_verified"] = True
+                ctx.fact_statuses["evidence.pharmacology_verified"] = "VERIFIED"
+                ctx.fact_sources["evidence.pharmacology_verified"] = "VERIFIED_EVIDENCE"
+                applied.append("evidence.pharmacology_verified")
+                ctx.knowledge_gaps = [
+                    g
+                    for g in ctx.knowledge_gaps
+                    if g.get("code") != "MISSING_PRODUCT_PHARMACOLOGY"
+                ]
+            if fp in {"product.chemical_formula", "product.molecular_weight"}:
+                ctx.knowledge_gaps = [
+                    g
+                    for g in ctx.knowledge_gaps
+                    if g.get("code") != "MISSING_PRODUCT_CHEMISTRY"
+                ]
+            if fp in {"product.inn", "product.trade_name"}:
+                ctx.knowledge_gaps = [
+                    g
+                    for g in ctx.knowledge_gaps
+                    if g.get("code") != "MISSING_PRODUCT_IDENTITY"
                 ]
     ctx.study_mutated = False
     return ctx, applied

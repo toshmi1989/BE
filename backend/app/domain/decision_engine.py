@@ -237,7 +237,12 @@ def invalidate_on_upstream_change(
 
     superseded = []
     unchanged = []
+    terminal = {"APPROVED", "REJECTED", "KEEP_CURRENT"}
     for d in decisions:
+        # Expert terminal outcomes stay until the writer explicitly reopens them
+        if str(d.status or "").upper() in terminal:
+            unchanged.append(d.domain)
+            continue
         if d.domain in affected_domains and d.status not in {"SUPERSEDED"}:
             if d.recommendation:
                 d.recommendation.superseded = True

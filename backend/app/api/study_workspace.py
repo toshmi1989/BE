@@ -547,6 +547,8 @@ def run_workflow(
                 "preflight": (prior.get("result_summary") or {}).get("preflight"),
             }
 
+    # Approvals live in DB after after_mutation clears memory — hydrate before any recompute
+    ensure_db_authoritative(db, study_id)
     try:
         out = run_protocol_workflow(
             study_id,
@@ -1198,6 +1200,151 @@ def resolve_study_gap_manually(
     after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
     panel = _gaps_panel(db, study_id, payload.package_id)
     return {**result, "gaps": panel["gaps"], "counts": panel["counts"]}
+
+
+class ProductExtractIn(BaseModel):
+    package_id: str | None = None
+    force_mock: bool = False
+    actor: str | None = None
+
+
+class ProductClaimReviewIn(BaseModel):
+    claim_id: str
+    action: str  # verify | reject
+    reviewer: str | None = None
+    applicability: str = "DIRECT"
+    applicability_reason: str | None = None
+    package_id: str | None = None
+    comment: str | None = None
+
+
+@router.get("/studies/{study_id}/product-evidence")
+def get_product_evidence_panel(
+    study_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Phase 30 — PRODUCT EVIDENCE REVIEW panel (AI proposals stay PROPOSED)."""
+    from app.domain.product_evidence_service import list_product_evidence_panel
+    from app.domain.product_knowledge import catalog_as_list
+    from app.domain.template_contamination import has_verified_product_pharmacology
+    from app.domain.workspace_assembly_context import build_workspace_assembly_context
+
+    _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    panel = list_product_evidence_panel(study_id)
+    ctx = build_workspace_assembly_context(study_id)
+    panel["catalog"] = catalog_as_list()
+    panel["pharmacology_verified"] = has_verified_product_pharmacology(ctx)
+    panel["final_gate"] = {
+        "code": "CRITICAL_TEMPLATE_CONTAMINATION",
+        "clears_when": "verified product pharmacology claims present",
+        "unverified_ai_cannot_clear": True,
+    }
+    return panel
+
+
+@router.post("/studies/{study_id}/product-evidence/extract")
+def extract_product_evidence(
+    study_id: str,
+    payload: ProductExtractIn | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Extract product-specific claims from study sources → PROPOSED only."""
+    from app.domain.product_evidence_service import (
+        extract_product_evidence_for_study,
+        list_product_evidence_panel,
+    )
+
+    payload = payload or ProductExtractIn()
+    auth = _auth_for_study(study_id, permission="view", authorization=authorization, db=db)
+    ensure_db_authoritative(db, study_id)
+    actor = payload.actor or (auth.email if auth else "system")
+    result = extract_product_evidence_for_study(
+        study_id,
+        package_id=payload.package_id,
+        force_mock=payload.force_mock,
+        actor=actor,
+    )
+    append_audit(
+        study_id,
+        event="PRODUCT_EVIDENCE_EXTRACTED",
+        who=actor,
+        what=f"claims={result.get('claims_created')}",
+        new_value={"provider": result.get("provider"), "auto_verified": False},
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    ensure_db_authoritative(db, study_id)
+    panel = list_product_evidence_panel(study_id)
+    return {**result, "panel": panel}
+
+
+@router.post("/studies/{study_id}/product-evidence/review")
+def review_product_evidence_claim(
+    study_id: str,
+    payload: ProductClaimReviewIn,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Verify or reject a product evidence proposal. Never auto-mutates canonical SoT beyond verified apply."""
+    from app.domain.research_evidence_engine import reject_claim, verify_claim
+    from app.domain.workspace_gaps import apply_verified_evidence
+    from app.domain.product_evidence_service import list_product_evidence_panel
+
+    auth = _auth_for_study(
+        study_id, permission="approve_decisions", authorization=authorization, db=db
+    )
+    ensure_db_authoritative(db, study_id)
+    reviewer = payload.reviewer or (auth.email if auth else "")
+    if not str(reviewer or "").strip():
+        raise HTTPException(status_code=400, detail="Требуется имя проверяющего")
+    action = str(payload.action or "").lower()
+    try:
+        if action == "verify":
+            claim = verify_claim(
+                payload.claim_id,
+                reviewer=reviewer,
+                applicability=payload.applicability,
+                applicability_reason=payload.applicability_reason
+                or "Проверено экспертом для product evidence",
+            )
+            applied = apply_verified_evidence(study_id, package_id=payload.package_id)
+            event = "PRODUCT_EVIDENCE_VERIFIED"
+        elif action == "reject":
+            claim = reject_claim(
+                payload.claim_id,
+                reviewer=reviewer,
+                rationale=payload.comment or "Отклонено экспертом",
+            )
+            applied = {"applied_fields": [], "recomputed_domains": []}
+            event = "PRODUCT_EVIDENCE_REJECTED"
+        else:
+            raise HTTPException(status_code=422, detail="action must be verify|reject")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    append_audit(
+        study_id,
+        event=event,
+        who=reviewer,
+        what=payload.claim_id,
+        new_value={"status": claim.verification_status, "field": claim.field_path},
+        reason=payload.comment or payload.applicability_reason,
+    )
+    after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+    ensure_db_authoritative(db, study_id)
+    return {
+        "claim": claim.to_dict(),
+        "applied_fields": applied.get("applied_fields") or [],
+        "panel": list_product_evidence_panel(study_id),
+        "study_mutated": False,
+        "auto_verified": False,
+    }
 
 
 class SheetFillIn(BaseModel):

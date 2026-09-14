@@ -10,6 +10,9 @@ RESEARCH_TASK_TYPES: tuple[str, ...] = (
     "FIND_MEAL_COMPOSITION",
     "FIND_ANALOGUE_STUDY",
     "FIND_REGULATORY_EVIDENCE",
+    "FIND_PRODUCT_PHARMACOLOGY",
+    "FIND_PRODUCT_CHEMISTRY",
+    "FIND_PRODUCT_SAFETY",
     "OTHER",
 )
 
@@ -147,6 +150,30 @@ GAP_TO_TASK: dict[str, dict[str, str]] = {
         "query_type": "PK",
         "field_path": "bioanalysis.analyte",
     },
+    "MISSING_PRODUCT_IDENTITY": {
+        "task_type": "FIND_SMPC_REFERENCE_PRODUCT",
+        "priority": "HIGH",
+        "query_type": "IDENTITY",
+        "field_path": "product.inn",
+    },
+    "MISSING_PRODUCT_PHARMACOLOGY": {
+        "task_type": "FIND_PRODUCT_PHARMACOLOGY",
+        "priority": "CRITICAL",
+        "query_type": "IDENTITY",
+        "field_path": "product.pharmacology",
+    },
+    "MISSING_PRODUCT_CHEMISTRY": {
+        "task_type": "FIND_PRODUCT_CHEMISTRY",
+        "priority": "HIGH",
+        "query_type": "IDENTITY",
+        "field_path": "product.chemical_formula",
+    },
+    "MISSING_PRODUCT_SAFETY": {
+        "task_type": "FIND_PRODUCT_SAFETY",
+        "priority": "MEDIUM",
+        "query_type": "IDENTITY",
+        "field_path": "product.safety_summary",
+    },
 }
 
 TASK_TYPE_LABELS_RU: dict[str, str] = {
@@ -157,5 +184,8 @@ TASK_TYPE_LABELS_RU: dict[str, str] = {
     "FIND_MEAL_COMPOSITION": "Состав завтрака / пищи",
     "FIND_ANALOGUE_STUDY": "Аналоговые исследования",
     "FIND_REGULATORY_EVIDENCE": "Регуляторные источники",
+    "FIND_PRODUCT_PHARMACOLOGY": "Фармакология / механизм действия",
+    "FIND_PRODUCT_CHEMISTRY": "Химическая формула / молекулярная масса",
+    "FIND_PRODUCT_SAFETY": "Безопасность / взаимодействия",
     "OTHER": "Прочее",
 }

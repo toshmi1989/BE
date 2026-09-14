@@ -41,6 +41,14 @@ def list_calculations(study_id: str) -> list[SampleSizeCalculationRecord]:
     return [_BY_ID[i] for i in ids if i in _BY_ID]
 
 
+def latest_accepted_calculation(study_id: str) -> SampleSizeCalculationRecord | None:
+    """Prefer an expert-accepted N over a newer CALCULATED tip-of-list."""
+    for rec in reversed(list_calculations(study_id)):
+        if str(getattr(rec, "status", "") or "").upper() in {"ACCEPTED", "APPROVED"}:
+            return rec
+    return None
+
+
 def next_version_number(study_id: str) -> int:
     existing = list_calculations(study_id)
     if not existing:
