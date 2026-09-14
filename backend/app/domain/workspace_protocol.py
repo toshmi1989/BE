@@ -224,10 +224,20 @@ def generate_docx_artifact(
             details={"stale_dependencies": stale, "critical_blockers": pf.get("critical_blockers")},
         )
     if pf.get("critical_blockers"):
+        # Only hard CRITICAL checks block DRAFT DOCX (approvals are warnings in preflight)
         raise ValidationError(
             "CRITICAL blockers present — DOCX generation disabled",
             field="preflight",
             details={"critical_blockers": pf["critical_blockers"]},
+        )
+    if not pf.get("can_generate_docx", False):
+        raise ValidationError(
+            "DOCX generation is not allowed by preflight",
+            field="preflight",
+            details={
+                "docx_blockers": pf.get("docx_blockers") or pf.get("critical_blockers"),
+                "checks": [c for c in (pf.get("checks") or []) if not c.get("ok")],
+            },
         )
     if pf.get("warnings") and not force_warnings_ok:
         raise ValidationError(

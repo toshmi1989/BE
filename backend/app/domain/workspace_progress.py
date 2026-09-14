@@ -97,6 +97,27 @@ PREFLIGHT_COPY_RU: dict[str, dict[str, str]] = {
         "action_label": "Пересобрать черновик",
         "tab": "protocol",
     },
+    "CRITICAL_TEMPLATE_CONTAMINATION": {
+        "what": "В шаблоне остался контент другого препарата",
+        "why": "Нужны верифицированные данные по текущему препарату или очистка шаблонного примера.",
+        "where": "Пробелы",
+        "action_label": "Проверить product evidence",
+        "tab": "gaps",
+    },
+    "PRIMARY_BE_APPROVED": {
+        "what": "Статистический план / PRIMARY BE не утверждён",
+        "why": "Для финальной выгрузки нужен утверждённый статистический план. Черновик DOCX можно собрать раньше.",
+        "where": "Решения",
+        "action_label": "Утвердить статистический план",
+        "tab": "decisions",
+    },
+    "SAMPLE_SIZE_APPROVED": {
+        "what": "Размер выборки не утверждён",
+        "why": "Для финальной выгрузки нужен утверждённый N. Черновик DOCX можно собрать раньше.",
+        "where": "Решения",
+        "action_label": "Утвердить размер выборки",
+        "tab": "decisions",
+    },
 }
 
 
@@ -281,7 +302,7 @@ def _actionable_blockers(
             covered_expert_gaps.add("MISSING_ANALYSIS_POPULATION_RULE")
         blockers.append(
             {
-                "severity": "CRITICAL" if (needs_primary or needs_population) else "WARNING",
+                "severity": "WARNING",
                 "code": "PRIMARY_BE_NOT_APPROVED"
                 if (needs_primary or needs_population)
                 else "STATISTICS_NOT_APPROVED",

@@ -637,7 +637,7 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
     add(
         "STATISTICS",
         "PRIMARY_BE_APPROVED",
-        "CRITICAL",
+        "WARNING",  # DRAFT DOCX may proceed; FINAL / can_finalize still requires APPROVED
         "PRIMARY_BE / statistics plan approved",
         bool(st and st.status == "APPROVED"),
     )
@@ -647,7 +647,7 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
     add(
         "SAMPLE_SIZE",
         "SAMPLE_SIZE_APPROVED",
-        "CRITICAL",
+        "WARNING",  # DRAFT DOCX may proceed; FINAL still requires ACCEPTED
         "Sample size approved",
         bool(latest_ss and str(latest_ss.status).upper() in {"ACCEPTED", "APPROVED"}),
     )
@@ -722,15 +722,18 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         }
 
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
+    # DRAFT DOCX: hard CRITICAL only (conflicts / stale / template). Approvals gate FINAL.
+    docx_blocking = list(critical_fail)
     out = {
         "study_id": study_id,
         "categories": sorted({c["category"] for c in checks}),
         "checks": checks,
         "critical_blockers": critical_fail,
+        "docx_blockers": docx_blocking,
         "can_finalize": len(critical_fail) == 0
         and ready["can_finalize"]
         and bool(contam_final.get("ok")),
-        "can_generate_docx": len([c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]) == 0,
+        "can_generate_docx": len(docx_blocking) == 0 and bool(contam_draft.get("ok")),
         "readiness": ready["readiness"],
         "readiness_label": ready["readiness_label"],
         "study_mutated": False,
@@ -740,8 +743,12 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         },
         "message": (
             "FINAL blocked by critical checks"
-            if critical_fail or not contam_final.get("ok")
-            else ("DOCX generation allowed (warnings may remain)" if ready["warnings"] else "Preflight passed")
+            if not ready["can_finalize"] or not contam_final.get("ok")
+            else (
+                "DOCX generation allowed (warnings may remain)"
+                if ready["warnings"] or any(not c["ok"] and c["severity"] == "WARNING" for c in checks)
+                else "Preflight passed"
+            )
         ),
         "stale_dependencies": stale,
     }

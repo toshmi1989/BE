@@ -521,8 +521,17 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
         created_by: "ui-medical-writer",
       })) as Record<string, unknown>;
       consumeWorkflowResponse(out);
+      if (out.preflight && typeof out.preflight === "object") {
+        setPreflight(out.preflight as Record<string, unknown>);
+      }
       setNotice("Черновик протокола подготовлен.");
       await refreshSlices(["protocol", "progress", "core", "gaps", "engines", "decisions"], activeStudy);
+      // Refresh preflight after persist/hydrate so Generate DOCX sees current gate
+      try {
+        setPreflight(await getStudyPreflight(activeStudy));
+      } catch {
+        /* keep */
+      }
     });
   }
 
@@ -678,8 +687,14 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   ]);
 
   const canGenerateDocx = Boolean(preflight?.can_generate_docx ?? progressPreflight.can_generate_docx);
-  const hasCriticalBlockers = progressBlockers.some((b) => String(b.severity).toUpperCase() === "CRITICAL");
-  // One list of what is left, deduplicated — never the same issue said twice
+  // Backend can_generate_docx is the DOCX gate; progress CRITICAL items may be FINAL-only warnings
+  const docxBlockedBy = (progressBlockers as Array<Record<string, unknown>>).filter(
+    (b) =>
+      String(b.severity).toUpperCase() === "CRITICAL" &&
+      ["UNRESOLVED_CRITICAL_CONFLICT", "PROTOCOL_DEPENDENCIES_STALE", "CRITICAL_TEMPLATE_CONTAMINATION", "NO_DOCUMENTS"].includes(
+        String(b.code || ""),
+      ),
+  );
   const remainingWork = progressBlockers.filter(
     (b, i, arr) => arr.findIndex((x) => String(x.code) === String(b.code)) === i,
   );
@@ -1904,13 +1919,24 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               </button>
               <button
                 type="button"
-                disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || hasCriticalBlockers}
+                disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || docxBlockedBy.length > 0}
+                title={
+                  canGenerateDocx && docxBlockedBy.length === 0
+                    ? "Сгенерировать DOCX черновик"
+                    : "DOCX пока недоступен — см. «Что осталось сделать» ниже"
+                }
                 onClick={() => setShowDocxConfirm(true)}
               >
                 Сгенерировать DOCX
               </button>
             </div>
 
+            {!canGenerateDocx && (
+              <p className="muted small">
+                Кнопка неактивна, пока preflight блокирует выгрузку. Нажмите «Проверить готовность» или
+                закройте пункты ниже.
+              </p>
+            )}
             <h3>Что осталось сделать</h3>
             {remainingWork.length === 0 ? (
               <p>
@@ -1944,7 +1970,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                   <li>Sample size v: {String(progressVersions.sample_size_status ?? "—")}</li>
                   <li>
                     Preflight:{" "}
-                    {canGenerateDocx ? "PASS" : hasCriticalBlockers ? "BLOCKED" : "WARN"}
+                    {canGenerateDocx ? "PASS" : docxBlockedBy.length > 0 ? "BLOCKED" : "WARN"}
                   </li>
                 </ul>
                 <div className="header-actions">

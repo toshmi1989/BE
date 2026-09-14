@@ -612,6 +612,23 @@ def run_workflow(
         statistics=draft_info.get("based_on_statistics"),
         sample_size=draft_info.get("based_on_sample_size"),
     )
+    # Preflight inside workflow ran before snapshot binding — refresh for accurate DOCX gate
+    from app.domain.study_workspace import build_preflight as _build_preflight
+
+    out["preflight"] = _build_preflight(study_id, package_id=out.get("package_id"))
+    if isinstance(out.get("steps"), list):
+        out["steps"] = [
+            s
+            for s in out["steps"]
+            if s.get("step") != "preflight"
+        ] + [
+            {
+                "step": "preflight",
+                "can_finalize": out["preflight"].get("can_finalize"),
+                "can_generate_docx": out["preflight"].get("can_generate_docx"),
+                "critical": len(out["preflight"].get("critical_blockers") or []),
+            }
+        ]
     if payload.persist:
         after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
     save_workflow_run(
