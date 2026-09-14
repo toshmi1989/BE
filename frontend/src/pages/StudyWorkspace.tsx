@@ -598,16 +598,6 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
     });
   }
 
-  async function runPreflight() {
-    if (!activeStudy) return;
-    await withOp("preflight", async () => {
-      // Final check lives inside the protocol step now
-      setPreflight(await getStudyPreflight(activeStudy));
-      await refreshSlices(["core", "gaps", "progress"], activeStudy);
-      goTab("protocol");
-    });
-  }
-
   async function loadPreview() {
     if (!activeStudy) return;
     await withOp("protocol", async () => {
@@ -630,7 +620,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   }
 
   async function generateDocxNow() {
-    if (!activeStudy || !canGenerateDocx) return;
+    if (!activeStudy) return;
     await confirmGenerateDocx();
   }
 
