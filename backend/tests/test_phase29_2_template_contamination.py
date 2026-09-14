@@ -112,6 +112,21 @@ def test_no_unresolved_product_specific_placeholder():
     )
 
 
+def test_draft_not_blocked_when_fingerprint_baseline_missing(monkeypatch):
+    """Missing audit fingerprint inventory must not block DRAFT export."""
+    monkeypatch.setattr(
+        "app.domain.template_contamination.CONTAMINATION_FINGERPRINTS",
+        frozenset(),
+    )
+    ctx = {"product": {"trade_name": "Upadacitinib", "inn": "upadacitinib"}, "structured_facts": {}}
+    draft = contamination_preflight(ctx, mode="DRAFT")
+    assert draft["ok"] is True
+    assert draft.get("fingerprint_baseline_missing") is True
+    final = contamination_preflight(ctx, mode="FINAL")
+    assert final["ok"] is False
+    assert any(u.get("reason") == "MISSING_FINGERPRINT_BASELINE" for u in final["unmanaged_blocks"])
+
+
 def test_regression_stale_block_blocks_generation(monkeypatch):
     """Known unmanaged product-specific block must block DOCX generation."""
     put_protocol_draft_version(
@@ -122,7 +137,7 @@ def test_regression_stale_block_blocks_generation(monkeypatch):
     )
     monkeypatch.setattr(
         "app.domain.workspace_protocol.build_preflight",
-        lambda _sid: {"critical_blockers": [], "warnings": []},
+        lambda _sid: {"critical_blockers": [], "warnings": [], "can_generate_docx": True},
     )
     monkeypatch.setattr(
         "app.domain.workspace_protocol.detect_stale_protocol_dependencies",

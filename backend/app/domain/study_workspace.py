@@ -703,10 +703,12 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
     study_ctx = build_workspace_assembly_context(study_id, package_id=package_id)
     contam_draft = contamination_preflight(study_ctx, mode="DRAFT")
     contam_final = contamination_preflight(study_ctx, mode="FINAL")
+    # DRAFT export clears Bosutinib example at render — not a CRITICAL writer blocker.
+    # FINAL still fail-closed without verified pharmacology.
     add(
         "TEMPLATE",
         "CRITICAL_TEMPLATE_CONTAMINATION",
-        "CRITICAL",
+        "WARNING" if contam_draft.get("ok") else "CRITICAL",
         contam_draft.get("message")
         or "Template contains product-specific content that is not supported by the current study.",
         bool(contam_draft.get("ok")),
@@ -719,10 +721,10 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
             "clearable_blocks": contam_draft.get("clearable_blocks"),
             "final_ok": contam_final.get("ok"),
             "final_unmanaged": contam_final.get("unmanaged_blocks"),
+            "draft_clears_at_render": True,
         }
 
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
-    # DRAFT DOCX: hard CRITICAL only (conflicts / stale / template). Approvals gate FINAL.
     docx_blocking = list(critical_fail)
     out = {
         "study_id": study_id,
@@ -733,6 +735,7 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         "can_finalize": len(critical_fail) == 0
         and ready["can_finalize"]
         and bool(contam_final.get("ok")),
+        # DRAFT DOCX: hard CRITICAL only. Template example is cleared at render when draft ok.
         "can_generate_docx": len(docx_blocking) == 0 and bool(contam_draft.get("ok")),
         "readiness": ready["readiness"],
         "readiness_label": ready["readiness_label"],

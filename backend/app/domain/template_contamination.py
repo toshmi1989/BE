@@ -311,6 +311,7 @@ def contamination_preflight(
 
     verified = has_verified_product_pharmacology(study_ctx)
     unmanaged: list[dict[str, Any]] = []
+    mode_u = str(mode).upper()
     for block in CONTAMINATION_BLOCKS:
         if block.classification != "PRODUCT_SPECIFIC":
             unmanaged.append(
@@ -322,14 +323,17 @@ def contamination_preflight(
             )
             continue
         if block.renderer_action == "POPULATE_FROM_EVIDENCE" and not verified:
-            unmanaged.append(
-                {
-                    "block_id": block.block_id,
-                    "reason": "MISSING_VERIFIED_EVIDENCE",
-                    "action": block.renderer_action,
-                    "source_field": block.source_field,
-                }
-            )
+            # DRAFT: renderer clears / leaves placeholder — do not block export.
+            # FINAL: must have verified evidence for populate fields.
+            if mode_u == "FINAL":
+                unmanaged.append(
+                    {
+                        "block_id": block.block_id,
+                        "reason": "MISSING_VERIFIED_EVIDENCE",
+                        "action": block.renderer_action,
+                        "source_field": block.source_field,
+                    }
+                )
         elif block.renderer_action == "BLOCK":
             unmanaged.append(
                 {
@@ -339,8 +343,8 @@ def contamination_preflight(
                 }
             )
         elif block.renderer_action == "CLEAR_OR_BLOCK":
-            # DRAFT: clear allowed. FINAL: require verified evidence instead of empty pharmacology.
-            if str(mode).upper() == "FINAL" and not verified:
+            # DRAFT: clear allowed at render time. FINAL: need verified pharmacology.
+            if mode_u == "FINAL" and not verified:
                 unmanaged.append(
                     {
                         "block_id": block.block_id,
@@ -350,8 +354,10 @@ def contamination_preflight(
                     }
                 )
 
-    # Registry must cover fingerprints; if inventory empty → treat as unmanaged risk
-    if not CONTAMINATION_FINGERPRINTS:
+    # Fingerprints are secondary protection for the scrubber — never block DRAFT
+    # solely because the audit inventory file was not shipped with the build.
+    fingerprint_gap = not CONTAMINATION_FINGERPRINTS
+    if fingerprint_gap and mode_u == "FINAL":
         unmanaged.append(
             {
                 "block_id": "registry.fingerprints",
@@ -369,8 +375,9 @@ def contamination_preflight(
         "verified_pharmacology": verified,
         "mode": mode,
         "fingerprint_count": len(CONTAMINATION_FINGERPRINTS),
+        "fingerprint_baseline_missing": fingerprint_gap,
         "message": (
-            "Template product-specific content is mapped for clear/populate"
+            "Template product-specific content will be cleared or populated at render"
             if ok
             else "Template contains product-specific content that is not supported by the current study."
         ),

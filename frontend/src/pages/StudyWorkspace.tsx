@@ -218,7 +218,6 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   const [snapshots, setSnapshots] = useState<Array<Record<string, unknown>>>([]);
   const [artifacts, setArtifacts] = useState<Array<Record<string, unknown>>>([]);
   const [docxResult, setDocxResult] = useState<Record<string, unknown> | null>(null);
-  const [showDocxConfirm, setShowDocxConfirm] = useState(false);
   const [showNewStudy, setShowNewStudy] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [newMeta, setNewMeta] = useState({ title: "", sponsor: "", product: "", dose: "" });
@@ -622,12 +621,17 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   async function confirmGenerateDocx() {
     if (!activeStudy) return;
     await withOp("docx", async () => {
-      const art = await generateWorkspaceDocx(activeStudy, false);
+      // DRAFT export: auto-confirm soft warnings; hard CRITICAL still fail on backend
+      const art = await generateWorkspaceDocx(activeStudy, true);
       setDocxResult(art);
-      setShowDocxConfirm(false);
       await refreshSlices(["protocol", "history", "progress"], activeStudy);
-      setNotice("DOCX сгенерирован.");
+      setNotice("DOCX сгенерирован. Пример чужого препарата из шаблона очищен при сборке.");
     });
+  }
+
+  async function generateDocxNow() {
+    if (!activeStudy || !canGenerateDocx) return;
+    await confirmGenerateDocx();
   }
 
   const header = (workspace?.header || {}) as Record<string, unknown>;
@@ -687,16 +691,22 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   ]);
 
   const canGenerateDocx = Boolean(preflight?.can_generate_docx ?? progressPreflight.can_generate_docx);
-  // Backend can_generate_docx is the DOCX gate; progress CRITICAL items may be FINAL-only warnings
+  // Hard DRAFT blockers only — template Bosutinib example clears at render (not a writer gate)
+  const HARD_DOCX_CODES = new Set([
+    "UNRESOLVED_CRITICAL_CONFLICT",
+    "PROTOCOL_DEPENDENCIES_STALE",
+    "NO_DOCUMENTS",
+    "NO_CRITICAL_CONFLICT",
+  ]);
   const docxBlockedBy = (progressBlockers as Array<Record<string, unknown>>).filter(
     (b) =>
       String(b.severity).toUpperCase() === "CRITICAL" &&
-      ["UNRESOLVED_CRITICAL_CONFLICT", "PROTOCOL_DEPENDENCIES_STALE", "CRITICAL_TEMPLATE_CONTAMINATION", "NO_DOCUMENTS"].includes(
-        String(b.code || ""),
-      ),
+      HARD_DOCX_CODES.has(String(b.code || "")),
   );
   const remainingWork = progressBlockers.filter(
-    (b, i, arr) => arr.findIndex((x) => String(x.code) === String(b.code)) === i,
+    (b, i, arr) =>
+      String(b.code || "") !== "CRITICAL_TEMPLATE_CONTAMINATION" &&
+      arr.findIndex((x) => String(x.code) === String(b.code)) === i,
   );
 
   const ssBlocked =
@@ -1879,34 +1889,15 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
         {tab === "protocol" && (
           <section className="panel">
             <h2>Протокол</h2>
-            <div className="card-grid">
-              <div className="summary-card">
-                <div className="muted">Draft version</div>
-                <strong>{String(progressVersions.protocol_draft ?? protocolDrafts[0]?.version ?? "—")}</strong>
-              </div>
-              <div className="summary-card">
-                <div className="muted">Snapshot version</div>
-                <strong>{String(progressVersions.snapshot ?? protocolPreview?.snapshot_version ?? "—")}</strong>
-              </div>
-              <div className="summary-card">
-                <div className="muted">Decision set</div>
-                <strong>{String(progressCounts.pending_decisions ?? "—")} pending</strong>
-              </div>
-              <div className="summary-card">
-                <div className="muted">Sample Size version</div>
-                <strong>{String(progressVersions.sample_size_status ?? samplePanel?.status ?? "—")}</strong>
-              </div>
-              <div className="summary-card">
-                <div className="muted">Statistics version</div>
-                <strong>{String(progressVersions.statistics_version ?? statsPanel?.version ?? "—")}</strong>
-              </div>
-              <div className="summary-card">
-                <div className="muted">Готовность к выгрузке</div>
-                <strong>
-                  {canGenerateDocx ? "Можно генерировать DOCX" : "Ещё есть незакрытые пункты"}
-                </strong>
-              </div>
-            </div>
+            <p className="muted small">
+              Черновик v{String(progressVersions.protocol_draft ?? protocolDrafts[0]?.version ?? "—")}
+              {" · "}
+              Snapshot v{String(progressVersions.snapshot ?? protocolPreview?.snapshot_version ?? "—")}
+              {" · "}
+              {canGenerateDocx && docxBlockedBy.length === 0
+                ? "можно выгрузить DOCX"
+                : "сначала закройте критичные пункты ниже"}
+            </p>
             <div className="header-actions">
               <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={buildDraft}>
                 Собрать черновик
@@ -1914,81 +1905,55 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={loadPreview}>
                 Предпросмотр
               </button>
-              <button type="button" disabled={ops.preflight.busy || !activeStudy} onClick={runPreflight}>
-                Проверить готовность
-              </button>
               <button
                 type="button"
                 disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || docxBlockedBy.length > 0}
                 title={
                   canGenerateDocx && docxBlockedBy.length === 0
-                    ? "Сгенерировать DOCX черновик"
-                    : "DOCX пока недоступен — см. «Что осталось сделать» ниже"
+                    ? "Сгенерировать DOCX черновик (пример чужого препарата из шаблона очищается)"
+                    : "DOCX пока недоступен — см. пункты ниже"
                 }
-                onClick={() => setShowDocxConfirm(true)}
+                onClick={() => void generateDocxNow()}
               >
                 Сгенерировать DOCX
               </button>
             </div>
 
-            {!canGenerateDocx && (
+            {!canGenerateDocx && docxBlockedBy.length > 0 && (
               <p className="muted small">
-                Кнопка неактивна, пока preflight блокирует выгрузку. Нажмите «Проверить готовность» или
-                закройте пункты ниже.
+                Выгрузка заблокирована критичными пунктами. Пример другого препарата в шаблоне при
+                черновике очищается автоматически — это не блокирует DOCX.
               </p>
             )}
-            <h3>Что осталось сделать</h3>
-            {remainingWork.length === 0 ? (
-              <p>
-                {preflight || writerProgress
-                  ? "Незакрытых пунктов нет — протокол можно выгружать."
-                  : "Нажмите «Проверить готовность», чтобы увидеть список."}
-              </p>
-            ) : (
-              <div>
-                {remainingWork.map((b) => (
-                  <BlockerCard
-                    key={String(b.code)}
-                    what={String(b.what || b.code)}
-                    why={String(b.why || "—")}
-                    where={String(b.where || "—")}
-                    actionLabel={String(b.action_label || "Перейти")}
-                    severity={String(b.severity)}
-                    onResolve={() => goTab(String(b.tab || "overview"))}
-                  />
-                ))}
-              </div>
-            )}
-
-            {showDocxConfirm && (
-              <div className="docx-confirm">
-                <h3>Подтверждение генерации DOCX</h3>
-                <ul>
-                  <li>Protocol v: {String(progressVersions.protocol_draft ?? protocolDrafts[0]?.version ?? "—")}</li>
-                  <li>Snapshot v: {String(progressVersions.snapshot ?? "—")}</li>
-                  <li>Statistics v: {String(progressVersions.statistics_version ?? "—")}</li>
-                  <li>Sample size v: {String(progressVersions.sample_size_status ?? "—")}</li>
-                  <li>
-                    Preflight:{" "}
-                    {canGenerateDocx ? "PASS" : docxBlockedBy.length > 0 ? "BLOCKED" : "WARN"}
-                  </li>
-                </ul>
-                <div className="header-actions">
-                  <button type="button" disabled={ops.docx.busy} onClick={confirmGenerateDocx}>
-                    Confirm generate
-                  </button>
-                  <button type="button" className="secondary" onClick={() => setShowDocxConfirm(false)}>
-                    Cancel
-                  </button>
+            {(docxBlockedBy.length > 0 || remainingWork.filter((b) => String(b.severity).toUpperCase() === "CRITICAL").length > 0) && (
+              <>
+                <h3>Что осталось сделать</h3>
+                <div>
+                  {remainingWork
+                    .filter((b) => String(b.severity).toUpperCase() === "CRITICAL" || HARD_DOCX_CODES.has(String(b.code || "")))
+                    .map((b) => (
+                      <BlockerCard
+                        key={String(b.code)}
+                        what={String(b.what || b.code)}
+                        why={String(b.why || "—")}
+                        where={String(b.where || "—")}
+                        actionLabel={String(b.action_label || "Перейти")}
+                        severity={String(b.severity)}
+                        onResolve={() => goTab(String(b.tab || "overview"))}
+                      />
+                    ))}
                 </div>
-              </div>
+              </>
+            )}
+            {canGenerateDocx && docxBlockedBy.length === 0 && remainingWork.filter((b) => String(b.severity).toUpperCase() === "CRITICAL").length === 0 && (
+              <p>Критических блокеров нет — можно собрать черновик и выгрузить DOCX.</p>
             )}
 
             {!protocolPreview && !docxResult && (
               <EmptyState
                 title="Нет протокола"
-                why="Черновик появится после решений и подготовки draft."
-                next="Проведите необходимые решения и preflight."
+                why="Соберите черновик после загрузки документов и решений."
+                next="Нажмите «Собрать черновик», затем «Сгенерировать DOCX»."
               />
             )}
 

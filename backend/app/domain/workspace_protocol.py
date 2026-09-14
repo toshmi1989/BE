@@ -239,7 +239,7 @@ def generate_docx_artifact(
                 "checks": [c for c in (pf.get("checks") or []) if not c.get("ok")],
             },
         )
-    if pf.get("warnings") and not force_warnings_ok:
+    if pf.get("warnings") and not force_warnings_ok and str(mode or "DRAFT").upper() == "FINAL":
         raise ValidationError(
             "Critical blockers отсутствуют. Есть warnings. Confirm to proceed.",
             field="preflight_warnings",
@@ -276,17 +276,32 @@ def generate_docx_artifact(
 
     render_mode = str(mode or "DRAFT").upper()
     contam = contamination_preflight(study_ctx, mode=render_mode)
+    # DRAFT: clear Bosutinib example during render — only hard unmanaged blocks abort.
+    # FINAL: fail-closed without verified pharmacology.
     if not contam.get("ok"):
-        raise ValidationError(
-            contam.get("message")
-            or "Template contains product-specific content that is not supported by the current study.",
-            field="CRITICAL_TEMPLATE_CONTAMINATION",
-            details={
-                "action": contam.get("action"),
-                "unmanaged_blocks": contam.get("unmanaged_blocks"),
-                "mode": render_mode,
-            },
-        )
+        hard = [
+            u
+            for u in (contam.get("unmanaged_blocks") or [])
+            if u.get("reason")
+            in {
+                "EXPLICIT_BLOCK",
+                "UNKNOWN_MUST_NOT_REMAIN",
+                "FINAL_REQUIRES_VERIFIED_EVIDENCE",
+                "MISSING_VERIFIED_EVIDENCE",
+                "MISSING_FINGERPRINT_BASELINE",
+            }
+        ]
+        if hard or render_mode == "FINAL":
+            raise ValidationError(
+                contam.get("message")
+                or "Template contains product-specific content that is not supported by the current study.",
+                field="CRITICAL_TEMPLATE_CONTAMINATION",
+                details={
+                    "action": contam.get("action"),
+                    "unmanaged_blocks": contam.get("unmanaged_blocks"),
+                    "mode": render_mode,
+                },
+            )
 
     assembled = assemble_protocol(
         study_ctx,

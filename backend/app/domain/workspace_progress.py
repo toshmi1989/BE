@@ -64,6 +64,7 @@ PREFLIGHT_ALREADY_REPORTED: frozenset[str] = frozenset(
         "SAMPLE_SIZE_APPROVED",
         "HAS_DOCUMENTS",
         "HAS_CANDIDATES",
+        "CRITICAL_TEMPLATE_CONTAMINATION",  # draft clears at render — not a writer checklist item
     }
 )
 
@@ -98,11 +99,11 @@ PREFLIGHT_COPY_RU: dict[str, dict[str, str]] = {
         "tab": "protocol",
     },
     "CRITICAL_TEMPLATE_CONTAMINATION": {
-        "what": "В шаблоне остался контент другого препарата",
-        "why": "Нужны верифицированные данные по текущему препарату или очистка шаблонного примера.",
-        "where": "Пробелы",
-        "action_label": "Проверить product evidence",
-        "tab": "gaps",
+        "what": "В шаблоне есть пример другого препарата",
+        "why": "При выгрузке черновика пример очищается автоматически. Для FINAL нужны верифицированные данные препарата.",
+        "where": "Протокол",
+        "action_label": "Сгенерировать DOCX",
+        "tab": "protocol",
     },
     "PRIMARY_BE_APPROVED": {
         "what": "Статистический план / PRIMARY BE не утверждён",
