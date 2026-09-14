@@ -549,6 +549,25 @@ def run_workflow(
 
     # Approvals live in DB after after_mutation clears memory — hydrate before any recompute
     ensure_db_authoritative(db, study_id)
+
+    # Workspace uploads are stored as WorkspaceDocumentRecord; analyze needs StudyInputPackage.
+    # Bridge real uploads before workflow (never invent content; never force golden fixture).
+    if not payload.use_golden_fixture:
+        from app.domain.study_workspace import find_study_package
+        from app.domain.workspace_package_bridge import ensure_package_from_workspace_documents
+
+        if find_study_package(study_id, None) is None:
+            try:
+                bridged = ensure_package_from_workspace_documents(db, study_id)
+            except ValidationError as e:
+                raise HTTPException(
+                    status_code=400, detail={"message": str(e), "field": e.field}
+                ) from e
+            if bridged is not None:
+                # Persist package, then re-hydrate — after_mutation clears process cache
+                after_mutation(db, study_id, organization_id=auth.organization_id if auth else None)
+                ensure_db_authoritative(db, study_id)
+
     try:
         out = run_protocol_workflow(
             study_id,

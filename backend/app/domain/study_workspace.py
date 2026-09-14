@@ -194,10 +194,12 @@ def _find_package(study_id: str, package_id: str | None = None):
     for p in list_packages():
         if p.study_id == study_id or (p.fixture_id and study_id in str(p.fixture_id)):
             return p
-    # golden default study id mapping
-    for p in list_packages():
-        if p.fixture_id and "UPDCB" in str(p.fixture_id):
-            return p
+    # Only map golden UPDCB fixture onto UPDCB study ids — never onto real writer studies
+    sid = str(study_id or "").upper()
+    if "UPDCB" in sid:
+        for p in list_packages():
+            if p.fixture_id and "UPDCB" in str(p.fixture_id):
+                return p
     return None
 
 

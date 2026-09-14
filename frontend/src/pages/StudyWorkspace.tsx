@@ -846,7 +846,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
             >
               {ops.workflow.busy || analyzeBusy ? "Анализ…" : "Анализировать пакет"}
             </button>
-            {ops.workflow.error && (
+            {ops.workflow.error && wizardStep === 3 && (
               <div className="op-error" role="alert">
                 {ops.workflow.error}{" "}
                 <button type="button" className="linkish" onClick={() => setOps((p) => clearOpError(p, "workflow"))}>

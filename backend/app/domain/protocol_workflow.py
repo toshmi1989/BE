@@ -75,7 +75,8 @@ def run_protocol_workflow(
         step("load_or_validate_documents", package_id=pkg.package_id, fixture_id=pkg.fixture_id)
     elif pkg is None:
         raise ValidationError(
-            "Нет загруженного пакета документов — загрузите файлы или отметьте демо-фикстуру",
+            "Нет загруженного пакета документов — загрузите Checklist / Synopsis / SmPC "
+            "через Workspace (Upload), затем снова нажмите «Анализировать пакет»",
             field="documents",
         )
     else:
