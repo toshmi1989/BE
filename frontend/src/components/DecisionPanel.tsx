@@ -376,7 +376,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
           title="Нет решений"
           why="Конфликты и рекомендации появятся после анализа пакета."
           next="Проанализируйте пакет документов."
-          actionLabel="Analyze study package"
+          actionLabel="Анализировать пакет"
           onAction={onAnalyze}
         />
       ) : null}

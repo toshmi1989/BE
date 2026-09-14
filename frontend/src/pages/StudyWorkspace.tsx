@@ -92,6 +92,30 @@ const DOC_TYPES = [
   { value: "OTHER", label: "Other" },
 ];
 
+const UPLOAD_READY_STATES = new Set([
+  "PRESENT",
+  "UPLOADED",
+  "COMPLETE",
+  "COMPLETED",
+  "CLASSIFIED",
+  "EXTRACTED",
+]);
+
+/** Documents may exist in progress/checklist before list API catches up. */
+function hasUploadedDocuments(
+  documents: Array<Record<string, unknown>>,
+  progressCounts: Record<string, unknown>,
+  packageChecklist: Array<Record<string, unknown>>,
+  cards: Record<string, unknown>,
+): boolean {
+  if (documents.length > 0) return true;
+  if (Number(progressCounts.documents ?? 0) > 0) return true;
+  if (Number(cards.documents ?? 0) > 0) return true;
+  return packageChecklist.some((item) =>
+    UPLOAD_READY_STATES.has(String(item.state || "").toUpperCase()),
+  );
+}
+
 type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 function statusClass(code: string | undefined): string {
@@ -259,7 +283,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
           const docs = await listWorkspaceDocuments(sid);
           setDocuments(docs.documents || []);
         } catch {
-          setDocuments([]);
+          // Keep prior list if refresh fails (upload may have succeeded)
         }
       }
 
@@ -469,6 +493,12 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
       setOps((prev) => setOpError(prev, "workflow", "Сначала создайте исследование или загрузите документы"));
       return;
     }
+    if (!hasUploadedDocuments(documents, progressCounts, packageChecklist, cards)) {
+      setOps((prev) =>
+        setOpError(prev, "workflow", "Сначала загрузите хотя бы один документ"),
+      );
+      return;
+    }
     setAnalyzeBusy(true);
     await withOp("workflow", async () => {
       const out = (await runStudyWorkflow(activeStudy, {
@@ -522,13 +552,29 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
     await withOp("upload", async () => {
       const types = asPackage ? ["CHECKLIST", "SYNOPSIS", "SMPC", "OTHER"] : [uploadType];
       let i = 0;
+      const uploadedRows: Array<Record<string, unknown>> = [];
       for (const file of Array.from(files)) {
         const dtype = asPackage ? types[Math.min(i, types.length - 1)] : uploadType;
-        await uploadWorkspaceDocument(activeStudy, file, dtype);
+        const row = await uploadWorkspaceDocument(activeStudy, file, dtype);
+        uploadedRows.push(row);
         i += 1;
       }
+      if (uploadedRows.length) {
+        setDocuments((prev) => {
+          const seen = new Set(prev.map((d) => String(d.document_id || "")));
+          const merged = [...prev];
+          for (const row of uploadedRows) {
+            const id = String(row.document_id || "");
+            if (id && !seen.has(id)) {
+              seen.add(id);
+              merged.push(row);
+            }
+          }
+          return merged;
+        });
+      }
       await refreshSlices(["documents", "progress", "core"], activeStudy);
-      setNotice(`Загружено файлов: ${files.length}`);
+      setNotice(`Загружено файлов: ${files.length}. Нажмите «Далее →», затем «Анализировать пакет».`);
     }).finally(() => {
       if (fileRef.current) fileRef.current.value = "";
       if (packageRef.current) packageRef.current.value = "";
@@ -588,6 +634,7 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   const progressCounts = (writerProgress?.counts as Record<string, unknown>) || {};
   const progressVersions = (writerProgress?.versions as Record<string, unknown>) || {};
   const progressPreflight = (writerProgress?.preflight as Record<string, unknown>) || {};
+  const docsReady = hasUploadedDocuments(documents, progressCounts, packageChecklist, cards);
 
   const nextAction = useMemo(() => {
     const fromBackend = fromBackendPrimary(
@@ -769,7 +816,12 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               ))}
             </div>
             <div className="header-actions">
-              <button type="button" disabled={!documents.length} onClick={() => setWizardStep(3)}>
+              <button
+                type="button"
+                disabled={!docsReady || ops.upload.busy}
+                title={!docsReady ? "Загрузите хотя бы один документ" : "Перейти к анализу"}
+                onClick={() => setWizardStep(3)}
+              >
                 Далее →
               </button>
               <button type="button" className="secondary" onClick={() => setWizardStep(1)}>
@@ -782,9 +834,26 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
         {wizardStep === 3 && (
           <div>
             <p className="muted">Шаг 3 — анализ пакета исследования.</p>
-            <button type="button" disabled={ops.workflow.busy || !activeStudy} onClick={analyzePackage}>
-              Analyze study package
+            <button
+              type="button"
+              disabled={ops.workflow.busy || analyzeBusy || !activeStudy}
+              title={
+                ops.workflow.busy || analyzeBusy
+                  ? "Анализ выполняется…"
+                  : "Запустить анализ пакета"
+              }
+              onClick={() => void analyzePackage()}
+            >
+              {ops.workflow.busy || analyzeBusy ? "Анализ…" : "Анализировать пакет"}
             </button>
+            {ops.workflow.error && (
+              <div className="op-error" role="alert">
+                {ops.workflow.error}{" "}
+                <button type="button" className="linkish" onClick={() => setOps((p) => clearOpError(p, "workflow"))}>
+                  ✕
+                </button>
+              </div>
+            )}
             {analyzeBusy && (
               <ul className="wizard-analyze-stages">
                 {ANALYZE_STAGES.map((stage, i) => (
@@ -1116,8 +1185,13 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               {humanLabel(header.overall_readiness || "Not loaded")}
             </span>
             {activeStudy ? (
-              <button type="button" disabled={ops.workflow.busy} onClick={analyzePackage}>
-                Analyze study package
+              <button
+                type="button"
+                disabled={ops.workflow.busy || analyzeBusy}
+                title={ops.workflow.busy || analyzeBusy ? "Анализ выполняется…" : "Анализировать пакет"}
+                onClick={() => void analyzePackage()}
+              >
+                {ops.workflow.busy || analyzeBusy ? "Анализ…" : "Анализировать пакет"}
               </button>
             ) : (
               <button
@@ -1147,6 +1221,14 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
           <div className="error-banner" role="alert">
             {globalError}{" "}
             <button type="button" className="linkish" onClick={() => setGlobalError(null)}>
+              ✕
+            </button>
+          </div>
+        )}
+        {ops.workflow.error && (
+          <div className="op-error" role="alert">
+            {ops.workflow.error}{" "}
+            <button type="button" className="linkish" onClick={() => setOps((p) => clearOpError(p, "workflow"))}>
               ✕
             </button>
           </div>
@@ -1320,24 +1402,16 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               <button type="button" disabled={ops.upload.busy || !activeStudy} onClick={() => packageRef.current?.click()}>
                 Upload package
               </button>
-              <button type="button" disabled={ops.workflow.busy || !activeStudy} onClick={analyzePackage}>
-                Analyze study package
+              <button
+                type="button"
+                disabled={ops.workflow.busy || analyzeBusy || !activeStudy}
+                title={
+                  ops.workflow.busy || analyzeBusy ? "Анализ выполняется…" : "Анализировать пакет"
+                }
+                onClick={() => void analyzePackage()}
+              >
+                {ops.workflow.busy || analyzeBusy ? "Анализ…" : "Анализировать пакет"}
               </button>
-              <input
-                ref={fileRef}
-                type="file"
-                hidden
-                accept=".docx,.pdf,.txt,.html,.htm,.mhtml"
-                onChange={(e) => onUploadFiles(e.target.files, false)}
-              />
-              <input
-                ref={packageRef}
-                type="file"
-                hidden
-                multiple
-                accept=".docx,.pdf,.txt,.html,.htm,.mhtml"
-                onChange={(e) => onUploadFiles(e.target.files, true)}
-              />
             </div>
             <div className="checklist-row">
               {packageChecklist.map((c) => (
@@ -1420,8 +1494,8 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
               <EmptyState
                 title="Нет извлечённых данных"
                 why="Пакет ещё не проанализирован или extraction пуст."
-                next="Загрузите документы и нажмите Analyze study package."
-                actionLabel="Analyze study package"
+                next="Загрузите документы и нажмите «Анализировать пакет»."
+                actionLabel="Анализировать пакет"
                 onAction={analyzePackage}
               />
             ) : (
