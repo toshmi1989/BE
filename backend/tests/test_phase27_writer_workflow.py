@@ -55,10 +55,10 @@ def client():
 
 
 def test_version_032():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert get_settings().app_version == "0.35.3"
-    assert TestClient(create_app()).get("/api/health").json()["version"] == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert get_settings().app_version == "0.35.5"
+    assert TestClient(create_app()).get("/api/health").json()["version"] == "0.35.5"
 
 
 def test_writer_progress_from_backend_state(client: TestClient):

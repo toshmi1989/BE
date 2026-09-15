@@ -55,11 +55,11 @@ def client():
 
 
 def test_version_031():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert get_settings().app_version == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert get_settings().app_version == "0.35.5"
     h = TestClient(create_app()).get("/api/health")
-    assert h.json()["version"] == "0.35.3"
+    assert h.json()["version"] == "0.35.5"
 
 
 def test_create_real_study_no_legacy(client: TestClient):

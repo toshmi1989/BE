@@ -741,16 +741,56 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
 
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
     docx_blocking = list(critical_fail)
+    can_finalize = (
+        len(critical_fail) == 0
+        and ready["can_finalize"]
+        and bool(contam_final.get("ok"))
+        and bool(sem.get("ok"))
+    )
+    from app.domain.placeholder_registry import TOC_VISUAL_VALIDATION
+
+    final_blockers: list[dict] = list(sem.get("blockers") or [])
+    for u in contam_final.get("unmanaged_blocks") or []:
+        final_blockers.append(
+            {
+                "code": u.get("reason") or "TEMPLATE_CONTAMINATION",
+                "field": u.get("block") or u.get("fingerprint") or "template",
+                "section": u.get("section") or "template",
+                "reason": u.get("message") or u.get("reason") or "Template contamination blocks FINAL",
+                "how_to_resolve": u.get("action")
+                or "Provide verified evidence or clear unmanaged template block",
+                "tab": "gaps",
+            }
+        )
+    for c in critical_fail:
+        final_blockers.append(
+            {
+                "code": c.get("code") or "CRITICAL",
+                "field": c.get("code") or "preflight",
+                "section": c.get("category") or "preflight",
+                "reason": c.get("message") or "Critical preflight check failed",
+                "how_to_resolve": c.get("action") or c.get("message") or "Close critical preflight item",
+                "tab": "gaps",
+            }
+        )
+    final_gate = {
+        "status": "PASS" if can_finalize else "BLOCKED",
+        "can_finalize": can_finalize,
+        "blockers": final_blockers,
+        "toc_visual_validation": TOC_VISUAL_VALIDATION,
+        "message": (
+            "FINAL ready"
+            if can_finalize
+            else (sem.get("message") or "FINAL blocked — see blockers")
+        ),
+    }
     out = {
         "study_id": study_id,
         "categories": sorted({c["category"] for c in checks}),
         "checks": checks,
         "critical_blockers": critical_fail,
         "docx_blockers": docx_blocking,
-        "can_finalize": len(critical_fail) == 0
-        and ready["can_finalize"]
-        and bool(contam_final.get("ok"))
-        and bool(sem.get("ok")),
+        "can_finalize": can_finalize,
         # DRAFT DOCX: hard CRITICAL only. Template example is cleared at render when draft ok.
         "can_generate_docx": len(docx_blocking) == 0 and bool(contam_draft.get("ok")),
         "readiness": ready["readiness"],
@@ -760,9 +800,10 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
             "draft": contam_draft,
             "final": contam_final,
         },
+        "final_gate": final_gate,
         "message": (
             "FINAL blocked by critical checks"
-            if not ready["can_finalize"] or not contam_final.get("ok")
+            if not can_finalize
             else (
                 "DOCX generation allowed (warnings may remain)"
                 if ready["warnings"] or any(not c["ok"] and c["severity"] == "WARNING" for c in checks)

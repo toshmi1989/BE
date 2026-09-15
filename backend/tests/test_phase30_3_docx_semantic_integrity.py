@@ -22,8 +22,8 @@ from app.domain.template_block_registry import TEMPLATE_BLOCKS, required_final_b
 
 
 def test_version_0353():
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert DOCX_GENERATOR_VERSION == "0.35.3"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert DOCX_GENERATOR_VERSION == "0.35.5"
 
 
 def test_cover_not_study_metadata_ordinal():

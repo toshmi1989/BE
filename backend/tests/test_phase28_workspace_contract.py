@@ -4,7 +4,7 @@ Covers document_count contracts, canonical-fact null semantics, persistence
 restart, stale protocol/DOCX gates, workflow step ERROR surfacing, study
 catalog, auth/org isolation matrix, golden 15vs30 path, and AI-off critical path.
 
-Version bumped to 0.35.3 (bump is a separate todo).
+Version bumped to 0.35.5 (bump is a separate todo).
 Report path noted: docs/PHASE28_WORKSPACE_INTEGRITY_REPORT.md (write later).
 """
 
@@ -144,14 +144,14 @@ def _add_org_member(
 
 
 # ---------------------------------------------------------------------------
-# Version guard (assert 0.35.3 for this phase of work)
+# Version guard (assert 0.35.5 for this phase of work)
 # ---------------------------------------------------------------------------
 
 
 def test_version_remains_032():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert get_settings().app_version == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert get_settings().app_version == "0.35.5"
 
 
 # ---------------------------------------------------------------------------

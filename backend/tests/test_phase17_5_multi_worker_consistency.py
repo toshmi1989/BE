@@ -68,8 +68,8 @@ def client():
 
 
 def test_version_0221():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
 
 
 def test_organization_model_unified():

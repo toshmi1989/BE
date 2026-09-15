@@ -184,10 +184,10 @@ def _clean(tmp_path, monkeypatch):
 
 
 def test_phase29_version():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert DOCX_GENERATOR_VERSION == "0.35.3"
-    assert get_settings().app_version == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert DOCX_GENERATOR_VERSION == "0.35.5"
+    assert get_settings().app_version == "0.35.5"
 
 
 def test_template_registry_covers_dynamic_fields():

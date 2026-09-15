@@ -24,10 +24,10 @@ from app.domain.research_evidence_store import clear_research_evidence_store, pu
 
 
 def test_phase30_2_version():
-    assert Settings().app_version == "0.35.3"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
-    assert DOCX_GENERATOR_VERSION == "0.35.3"
-    assert get_settings().app_version == "0.35.3"
+    assert Settings().app_version == "0.35.5"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.5"
+    assert DOCX_GENERATOR_VERSION == "0.35.5"
+    assert get_settings().app_version == "0.35.5"
 
 
 def test_accepted_calculation_never_human_facing_raw():

@@ -14,6 +14,11 @@ from zipfile import ZipFile
 from docx import Document
 
 from app.domain.cover_mapping import detect_wrong_cover_mapping
+from app.domain.placeholder_registry import (
+    TOC_VISUAL_VALIDATION,
+    assess_placeholders_for_mode,
+    classify_placeholders,
+)
 from app.domain.protocol_template_registry import study_is_bosutinib_sample
 
 UNRESOLVED_RE = re.compile(r"\{\{[A-Z0-9_.]+\}\}")
@@ -31,9 +36,6 @@ WASHOUT_DAY_ALT_RE = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*(?:дн|день|дня|дней|day|days)[^\d]{0,40}?(?:отмывк\w*|washout)",
     re.IGNORECASE,
 )
-
-# Placeholders intentionally allowed in FINAL (empty by default = block all)
-FINAL_PLACEHOLDER_ALLOWLIST: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -160,29 +162,53 @@ def assess_docx_semantic_integrity(
     texts = _iter_all_texts(doc)
     blob = "\n".join(t for _, t in texts)
 
-    # Placeholders (body + XML w:t via zip)
+    # Placeholders (body + tables + headers/footers + XML w:t) — Phase 30.5 registry gate
     placeholders = sorted(set(UNRESOLVED_RE.findall(blob) + _scan_xml_placeholders(path)))
-    blocked_ph = [p for p in placeholders if p not in FINAL_PLACEHOLDER_ALLOWLIST]
-    report.placeholder_count = len(blocked_ph)
-    if blocked_ph and mode_u == "FINAL":
+    ph_gate = assess_placeholders_for_mode(placeholders, mode=mode_u)
+    report.placeholder_count = len(placeholders)
+    report.unresolved_required_fields = int(ph_gate.get("required_count") or 0) + int(
+        ph_gate.get("unknown_count") or 0
+    )
+    if mode_u == "FINAL" and not ph_gate.get("ok"):
         issues.append(
             IntegrityIssue(
                 "CRITICAL",
                 "UNRESOLVED_TEMPLATE_PLACEHOLDER",
-                f"FINAL DOCX has unresolved placeholders: {blocked_ph[:25]}",
-                {"placeholders": blocked_ph},
+                ph_gate.get("message")
+                or "FINAL DOCX has required/unknown unresolved placeholders",
+                {
+                    "blocking": ph_gate.get("blocking"),
+                    "required_count": ph_gate.get("required_count"),
+                    "unknown_count": ph_gate.get("unknown_count"),
+                    "toc_visual_validation": TOC_VISUAL_VALIDATION,
+                },
             )
         )
-        report.unresolved_required_fields = len(blocked_ph)
-    elif blocked_ph and mode_u == "DRAFT":
-        issues.append(
-            IntegrityIssue(
-                "WARNING",
-                "UNRESOLVED_TEMPLATE_PLACEHOLDER",
-                f"DRAFT still has placeholders (allowed for draft only): {blocked_ph[:15]}",
-                {"placeholders": blocked_ph},
+    elif mode_u == "DRAFT" and placeholders:
+        # DRAFT may keep explicit {{…}} markers — must remain visually unresolved
+        non_brace = [p for p in placeholders if not (p.startswith("{{") and p.endswith("}}"))]
+        if non_brace:
+            issues.append(
+                IntegrityIssue(
+                    "CRITICAL",
+                    "DRAFT_PLACEHOLDER_NOT_EXPLICIT",
+                    "DRAFT unresolved data must stay as explicit {{CODE}} markers",
+                    {"bad": non_brace},
+                )
             )
-        )
+        else:
+            issues.append(
+                IntegrityIssue(
+                    "WARNING",
+                    "UNRESOLVED_TEMPLATE_PLACEHOLDER",
+                    ph_gate.get("message")
+                    or f"DRAFT has {len(placeholders)} explicit placeholders (FINAL would block)",
+                    {
+                        "blocking_for_final": ph_gate.get("blocking_for_final"),
+                        "count": len(placeholders),
+                    },
+                )
+            )
 
     bosutinib = study_is_bosutinib_sample(study_ctx.get("product") or {})
 
@@ -293,8 +319,10 @@ def assess_docx_semantic_integrity(
 
 def semantic_preflight_from_context(study_ctx: dict[str, Any], *, mode: str = "DRAFT") -> dict[str, Any]:
     """Pre-render gates for missing required sources (FINAL fail-closed)."""
+    from app.domain.placeholder_registry import PLACEHOLDER_CATALOG, TOC_VISUAL_VALIDATION
+
     mode_u = str(mode or "DRAFT").upper()
-    blockers: list[dict[str, str]] = []
+    blockers: list[dict[str, Any]] = []
     study = study_ctx.get("study") or {}
     product = study_ctx.get("product") or {}
     subjects = study_ctx.get("subjects") or {}
@@ -305,38 +333,108 @@ def semantic_preflight_from_context(study_ctx: dict[str, Any], *, mode: str = "D
     washout = study_ctx.get("washout") or {}
     observation = study_ctx.get("observation") or {}
 
-    def add(code: str, reason: str, field: str) -> None:
-        blockers.append({"code": code, "reason": reason, "field": field})
+    def add(
+        code: str,
+        reason: str,
+        field: str,
+        *,
+        section: str = "",
+        placeholder: str | None = None,
+        tab: str = "gaps",
+    ) -> None:
+        blockers.append(
+            {
+                "code": code,
+                "reason": reason,
+                "field": field,
+                "section": section,
+                "how_to_resolve": reason,
+                "placeholder": placeholder,
+                "tab": tab,
+            }
+        )
 
     if mode_u != "FINAL":
-        return {"ok": True, "mode": mode_u, "blockers": [], "message": "DRAFT semantic preflight soft"}
+        return {
+            "ok": True,
+            "mode": mode_u,
+            "blockers": [],
+            "toc_visual_validation": TOC_VISUAL_VALIDATION,
+            "message": "DRAFT semantic preflight soft",
+        }
 
     if not study.get("version_date"):
-        add("MISSING_PROTOCOL_DATE", "Study/ProtocolDraft version_date required for FINAL", "study.version_date")
+        add(
+            "MISSING_PROTOCOL_DATE",
+            "Study/ProtocolDraft version_date required for FINAL",
+            "study.version_date",
+            section="Cover / Header",
+            tab="protocol",
+        )
     if not product.get("dosage_form"):
-        add("MISSING_DOSAGE_FORM", "dosage_form required (typed string)", "product.dosage_form")
+        add("MISSING_DOSAGE_FORM", "dosage_form required (typed string)", "product.dosage_form", section="Cover / 2.1.1")
     if not product.get("dosage"):
-        add("MISSING_DOSE", "dose required (typed Dose)", "product.dosage")
+        add("MISSING_DOSE", "dose required (typed Dose)", "product.dosage", section="Cover / 2.1.1")
     if subjects.get("target_evaluable_n") is None and subjects.get("planned_randomized_n") is None:
-        add("MISSING_SUBJECT_COUNTS", "evaluable/randomized targets required", "subjects")
+        add("MISSING_SUBJECT_COUNTS", "evaluable/randomized targets required", "subjects", section="Synopsis", tab="decisions")
     if not (sampling.get("points") or []):
-        add("MISSING_SAMPLING_PLAN", "SamplingPlan points required", "sampling.points")
+        spec = PLACEHOLDER_CATALOG["SAMPLING.POINTS"]
+        add(
+            "MISSING_SAMPLING_PLAN",
+            spec.resolve_hint,
+            "sampling.points",
+            section=spec.section,
+            placeholder="{{SAMPLING.POINTS}}",
+            tab=spec.tab,
+        )
     if not washout.get("selected_value"):
-        add("MISSING_WASHOUT", "Canonical washout required", "washout")
+        add("MISSING_WASHOUT", "Canonical washout required", "washout", section="Synopsis / 4.x", tab="decisions")
     if observation.get("selected_duration") is None and observation.get("final_sampling_time") is None:
-        add("MISSING_OBSERVATION_DURATION", "Observation duration required", "observation")
+        spec = PLACEHOLDER_CATALOG["OBSERVATION.DURATION"]
+        add(
+            "MISSING_OBSERVATION_DURATION",
+            spec.resolve_hint,
+            "observation",
+            section=spec.section,
+            placeholder="{{OBSERVATION.DURATION}}",
+            tab=spec.tab,
+        )
     inc = eligibility.get("inclusion") or []
     if not inc:
-        add("MISSING_ELIGIBILITY", "Eligibility inclusion criteria required", "eligibility.inclusion")
+        spec = PLACEHOLDER_CATALOG["ELIGIBILITY.INCLUSION"]
+        add(
+            "MISSING_ELIGIBILITY",
+            spec.resolve_hint,
+            "eligibility.inclusion",
+            section=spec.section,
+            placeholder="{{ELIGIBILITY.INCLUSION}}",
+            tab=spec.tab,
+        )
     if not bio:
-        add("MISSING_BIOANALYSIS", "Bioanalysis plan required or explicitly blocked", "bioanalysis_plan")
+        spec = PLACEHOLDER_CATALOG["BIOANALYSIS.METHOD"]
+        add(
+            "MISSING_BIOANALYSIS",
+            spec.resolve_hint,
+            "bioanalysis_plan",
+            section=spec.section,
+            placeholder="{{BIOANALYSIS.METHOD}}",
+            tab=spec.tab,
+        )
     if not stats or str(stats.get("status") or "").upper() not in {"APPROVED", "ACCEPTED"}:
-        # PRIMARY_BE approval lives in statistics plan
-        add("MISSING_STATISTICS_PLAN", "APPROVED StatisticsPlan required for FINAL", "statistical_config")
+        spec = PLACEHOLDER_CATALOG["STATISTICS.ALPHA"]
+        add(
+            "MISSING_STATISTICS_PLAN",
+            spec.resolve_hint,
+            "statistical_config",
+            section=spec.section,
+            placeholder="{{STATISTICS.ALPHA}}",
+            tab=spec.tab,
+        )
 
     return {
         "ok": len(blockers) == 0,
         "mode": mode_u,
         "blockers": blockers,
+        "toc_visual_validation": TOC_VISUAL_VALIDATION,
         "message": "FINAL semantic preflight passed" if not blockers else "FINAL blocked by semantic gaps",
     }

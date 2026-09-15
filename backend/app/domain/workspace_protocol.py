@@ -283,7 +283,12 @@ def generate_docx_artifact(
             raise ValidationError(
                 sem_pf.get("message") or "FINAL blocked by semantic gaps",
                 field="SEMANTIC_FINAL_GAPS",
-                details={"blockers": sem_pf.get("blockers"), "mode": render_mode},
+                details={
+                    "can_finalize": False,
+                    "final_status": "BLOCKED",
+                    "blockers": sem_pf.get("blockers"),
+                    "mode": render_mode,
+                },
             )
 
     contam = contamination_preflight(study_ctx, mode=render_mode)
@@ -308,6 +313,8 @@ def generate_docx_artifact(
                 or "Template contains product-specific content that is not supported by the current study.",
                 field="CRITICAL_TEMPLATE_CONTAMINATION",
                 details={
+                    "can_finalize": False if render_mode == "FINAL" else None,
+                    "final_status": "BLOCKED" if render_mode == "FINAL" else None,
                     "action": contam.get("action"),
                     "unmanaged_blocks": contam.get("unmanaged_blocks"),
                     "mode": render_mode,
@@ -356,7 +363,10 @@ def generate_docx_artifact(
             field="docx_renderer",
             details={
                 "status": result.status,
+                "can_finalize": False if render_mode == "FINAL" else None,
+                "final_status": "BLOCKED" if render_mode == "FINAL" else result.status,
                 "blocking_reasons": list(result.blocking_reasons or []),
+                "semantic_integrity": getattr(result, "semantic_integrity", None),
                 "template_version": result.template_version or profile.template_version,
                 "generator_version": result.generator_version or DOCX_GENERATOR_VERSION,
             },

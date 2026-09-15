@@ -681,6 +681,13 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
   ]);
 
   const canGenerateDocx = Boolean(preflight?.can_generate_docx ?? progressPreflight.can_generate_docx);
+  const canFinalize = Boolean(
+    preflight?.can_finalize ?? readiness.can_finalize ?? progressPreflight.can_finalize,
+  );
+  const finalGate = (preflight?.final_gate as Record<string, unknown> | undefined) || {};
+  const finalGateBlockers: Array<Record<string, unknown>> = Array.isArray(finalGate.blockers)
+    ? (finalGate.blockers as Array<Record<string, unknown>>)
+    : [];
   // Hard DRAFT blockers only — template Bosutinib example clears at render (not a writer gate)
   const HARD_DOCX_CODES = new Set([
     "UNRESOLVED_CRITICAL_CONFLICT",
@@ -1888,6 +1895,51 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 ? "можно выгрузить DOCX"
                 : "сначала закройте критичные пункты ниже"}
             </p>
+            <div className="docx-mode-banner" style={{ marginBottom: "0.75rem" }}>
+              <p>
+                <strong>Режим выгрузки: ЧЕРНОВИК (DRAFT)</strong>
+                {" — "}
+                не является утверждённым FINAL-протоколом. Плейсхолдеры вида {"{{CODE}}"} допустимы.
+              </p>
+              <p>
+                FINAL:{" "}
+                {canFinalize ? (
+                  <strong style={{ color: "var(--ok, #0a7a32)" }}>PASS</strong>
+                ) : (
+                  <strong style={{ color: "var(--danger, #b00020)" }}>BLOCKED</strong>
+                )}
+                {!canFinalize && (
+                  <span className="muted small">
+                    {" "}
+                    — can_finalize=false; выгрузка FINAL запрещена, пока не закрыты пункты ниже.
+                  </span>
+                )}
+              </p>
+              {!canFinalize && finalGateBlockers.length > 0 && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <h3 style={{ margin: "0.25rem 0" }}>Почему FINAL BLOCKED</h3>
+                  <ul className="muted small" style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                    {finalGateBlockers.map((b, i) => (
+                      <li key={`${String(b.code || b.field || i)}-${i}`}>
+                        <strong>{String(b.section || "—")}</strong>
+                        {": "}
+                        {String(b.field || b.placeholder || b.code || "—")}
+                        {" — "}
+                        {String(b.reason || b.how_to_resolve || "—")}
+                        {" "}
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={() => goTab(String(b.tab || "gaps"))}
+                        >
+                          Resolve
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
             <div className="header-actions">
               <button type="button" disabled={ops.protocol.busy || !activeStudy} onClick={buildDraft}>
                 Собрать черновик
@@ -1900,12 +1952,12 @@ export function StudyWorkspace(props: { aiEnabledOverride?: boolean } = {}) {
                 disabled={ops.docx.busy || !activeStudy || !canGenerateDocx || docxBlockedBy.length > 0}
                 title={
                   canGenerateDocx && docxBlockedBy.length === 0
-                    ? "Сгенерировать DOCX черновик (пример чужого препарата из шаблона очищается)"
-                    : "DOCX пока недоступен — см. пункты ниже"
+                    ? "Сгенерировать DOCX черновик (DRAFT). FINAL отдельно и fail-closed."
+                    : "DOCX черновик пока недоступен — см. пункты ниже"
                 }
                 onClick={() => void generateDocxNow()}
               >
-                Сгенерировать DOCX
+                Сгенерировать DOCX · черновик
               </button>
             </div>
 
