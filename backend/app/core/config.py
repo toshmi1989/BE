@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "BE Protocol Platform"
-    app_version: str = "0.35.2"
+    app_version: str = "0.35.3"
     api_prefix: str = "/api"
     base_path: str = ""
     app_port: int = 8000

@@ -275,6 +275,17 @@ def generate_docx_artifact(
         )
 
     render_mode = str(mode or "DRAFT").upper()
+    from app.domain.docx_semantic_integrity import semantic_preflight_from_context
+
+    if render_mode == "FINAL":
+        sem_pf = semantic_preflight_from_context(study_ctx, mode="FINAL")
+        if not sem_pf.get("ok"):
+            raise ValidationError(
+                sem_pf.get("message") or "FINAL blocked by semantic gaps",
+                field="SEMANTIC_FINAL_GAPS",
+                details={"blockers": sem_pf.get("blockers"), "mode": render_mode},
+            )
+
     contam = contamination_preflight(study_ctx, mode=render_mode)
     # DRAFT: clear Bosutinib example during render — only hard unmanaged blocks abort.
     # FINAL: fail-closed without verified pharmacology.

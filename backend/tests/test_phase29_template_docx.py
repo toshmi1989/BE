@@ -184,10 +184,10 @@ def _clean(tmp_path, monkeypatch):
 
 
 def test_phase29_version():
-    assert Settings().app_version == "0.35.2"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.2"
-    assert DOCX_GENERATOR_VERSION == "0.35.2"
-    assert get_settings().app_version == "0.35.2"
+    assert Settings().app_version == "0.35.3"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
+    assert DOCX_GENERATOR_VERSION == "0.35.3"
+    assert get_settings().app_version == "0.35.3"
 
 
 def test_template_registry_covers_dynamic_fields():
@@ -379,7 +379,7 @@ def test_generate_docx_blocks_when_product_missing(monkeypatch):
         )
         monkeypatch.setattr(
             "app.domain.workspace_protocol.build_preflight",
-            lambda _sid: {"critical_blockers": [], "warnings": []},
+            lambda _sid: {"critical_blockers": [], "warnings": [], "can_generate_docx": True},
         )
         monkeypatch.setattr(
             "app.domain.workspace_protocol.detect_stale_protocol_dependencies",

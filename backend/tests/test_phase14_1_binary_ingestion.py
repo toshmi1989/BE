@@ -626,7 +626,7 @@ def test_mock_ai_after_binary_still_proposed() -> None:
 
 
 def test_version_0_15_1() -> None:
-    assert get_settings().app_version == "0.35.2"
+    assert get_settings().app_version == "0.35.3"
 
 
 def test_raw_fixture_layout() -> None:

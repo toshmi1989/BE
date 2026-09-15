@@ -80,30 +80,61 @@ def _collect_visible_blob(doc: DocumentObject) -> str:
 def scrub_stale_template_products(doc: DocumentObject, study_ctx: dict[str, Any]) -> dict[str, Any]:
     """Overwrite Bosutinib/Bosulif sample strings with the study product name.
 
-    If the study *is* the Bosutinib sample case, leave tokens alone.
-    If study product is missing, report remaining stale hits for blocking.
+    Phase 30.3: also scrub stale template dose (400 mg) and template date when
+    the study is not the Bosutinib sample and canonical values differ.
     """
     product = study_ctx.get("product") or {}
     if study_is_bosutinib_sample(product):
         return {"scrubbed": 0, "remaining": 0, "skipped": "study_is_bosutinib_sample"}
 
     replacement = str(product.get("trade_name") or product.get("inn") or "").strip()
+    study_dose = str(product.get("dosage") or "").strip()
+    study_date = str((study_ctx.get("study") or {}).get("version_date") or "").strip()
     scrubbed = 0
+    dose_scrubbed = 0
+    date_scrubbed = 0
+
+    def _scrub_text(text: str) -> tuple[str, int, int, int]:
+        nonlocal_hits = 0
+        d_hits = 0
+        date_hits = 0
+        new = text
+        if replacement:
+            new, nonlocal_hits = _replace_tokens(new, replacement)
+            if nonlocal_hits and "Исследуемый препарат" in text:
+                new = f"Исследуемый препарат: {replacement}"
+        # Stale 400 mg when study dose is not 400
+        if study_dose and "400" not in study_dose:
+            import re
+
+            for pat in (r"\b400\s*мг\b", r"\b400\s*mg\b"):
+                if re.search(pat, new, flags=re.IGNORECASE):
+                    count = len(re.findall(pat, new, flags=re.IGNORECASE))
+                    new = re.sub(pat, study_dose, new, flags=re.IGNORECASE)
+                    d_hits += count
+        # Template sample date
+        if "18.04.2025" in new and study_date and "18.04.2025" not in study_date:
+            date_hits = new.count("18.04.2025")
+            new = new.replace("18.04.2025", study_date)
+        elif "18.04.2025" in new and not study_date:
+            # Clear rather than leave template date
+            date_hits = new.count("18.04.2025")
+            new = new.replace("18.04.2025 г.", "[ДАТА ВЕРСИИ НЕ ЗАДАНА]").replace(
+                "18.04.2025", "[ДАТА ВЕРСИИ НЕ ЗАДАНА]"
+            )
+        return new, nonlocal_hits, d_hits, date_hits
 
     def handle_paragraph(p: Any) -> None:
-        nonlocal scrubbed
+        nonlocal scrubbed, dose_scrubbed, date_scrubbed
         text = p.text or ""
         if not text:
             return
-        if not replacement:
-            return
-        new, hits = _replace_tokens(text, replacement)
-        if hits and new != text:
-            # Prefer clean identity line in header product cell
-            if "Исследуемый препарат" in text:
-                new = f"Исследуемый препарат: {replacement}"
+        new, hits, d_hits, date_hits = _scrub_text(text)
+        if new != text:
             _paragraph_set_text(p, new)
             scrubbed += hits
+            dose_scrubbed += d_hits
+            date_scrubbed += date_hits
 
     # Body paragraphs
     for p in doc.paragraphs:
@@ -132,6 +163,8 @@ def scrub_stale_template_products(doc: DocumentObject, study_ctx: dict[str, Any]
 
     return {
         "scrubbed": scrubbed,
+        "dose_scrubbed": dose_scrubbed,
+        "date_scrubbed": date_scrubbed,
         "remaining": remaining,
         "replacement": replacement or None,
     }

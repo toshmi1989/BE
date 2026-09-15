@@ -10,12 +10,13 @@ TEMPLATE_ID = "BE_Protocol_Template"
 TEMPLATE_VERSION = "v2.0"
 TEMPLATE_FILENAME = "BE_Protocol_Template_v2.0.docx"
 TEMPLATE_CHECKSUM_SHA256 = "8e6be6aa6f0514dc4ba6a1016feb141946a2ded538a58d306bcf0fa68725d8a6"
-DOCX_GENERATOR_VERSION = "0.35.2"
-PROFILE_VERSION = "DOCX.PROFILE.v4"
+DOCX_GENERATOR_VERSION = "0.35.3"
+PROFILE_VERSION = "DOCX.PROFILE.v5"
 
 # ProtocolDraft table_key → template table index (0-based)
+# COVER_METADATA is typed label fill for T01 — never STUDY_METADATA ordinal dump.
 TABLE_KEY_TO_INDEX: dict[str, int] = {
-    "STUDY_METADATA": 0,  # T01
+    "COVER_METADATA": 0,  # T01 cover — typed cover_mapping
     "SYNOPSIS_N": 2,  # T03 synopsis (N rows merged conceptually)
     "SIGNATURES": 3,  # T04
     "TEST_PRODUCT": 4,  # T05

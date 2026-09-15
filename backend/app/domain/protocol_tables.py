@@ -6,6 +6,7 @@ from typing import Any
 
 from app.domain.canonical_sampling import get_canonical_sampling_plan
 from app.domain.canonical_subjects import get_canonical_subject_counts
+from app.domain.cover_mapping import build_cover_rows as _build_cover_rows
 from app.domain.display_value_registry import resolve_display
 from app.domain.org_render import signature_table_rows
 from app.domain.product_mapping import build_reference_product_rows, build_test_product_rows
@@ -73,6 +74,17 @@ def build_tables(ctx: dict, consistency: dict) -> list[dict[str, Any]]:
     )
 
     add(
+        "COVER_METADATA",
+        "Cover metadata",
+        "COVER",
+        ["Field", "Value"],
+        _build_cover_rows(ctx),
+        fill_mode="LABEL",
+        classification="FORM_DYNAMIC",
+    )
+
+    # STUDY_METADATA kept for appendix/internal consumers — not mapped to T01 ordinal
+    add(
         "STUDY_METADATA",
         "Study metadata",
         "SYNOPSIS",
@@ -95,6 +107,8 @@ def build_tables(ctx: dict, consistency: dict) -> list[dict[str, Any]]:
                 else "{{SUBJECTS.RANDOMIZED_N}}",
             ],
         ],
+        fill_mode="LABEL",
+        classification="DYNAMIC",
     )
 
     add(
@@ -149,10 +163,14 @@ def build_tables(ctx: dict, consistency: dict) -> list[dict[str, Any]]:
     )
 
     points = sampling_c.points
+    blood = ctx.get("blood_volume") or {}
+    default_vol = blood.get("blood_volume_per_pk_sample_ml")
     samp_rows = [
         [
-            i + 1,
+            p.get("sequence_order") if p.get("sequence_order") is not None else i + 1,
             p.get("time_h"),
+            p.get("blood_volume_ml") if p.get("blood_volume_ml") is not None else default_vol,
+            p.get("allowed_deviation") or p.get("deviation") or "",
             p.get("reason_display")
             or resolve_display(
                 p.get("reason"), context="sampling_reason", fallback=str(p.get("reason") or "")
@@ -161,12 +179,21 @@ def build_tables(ctx: dict, consistency: dict) -> list[dict[str, Any]]:
         for i, p in enumerate(points)
     ]
     if not samp_rows:
-        samp_rows = [["{{SAMPLING.POINT}}", "{{SAMPLING.TIME_H}}", ""]]
+        # Do not fabricate points — leave explicit markers for integrity gate
+        samp_rows = [
+            [
+                "{{SAMPLING.POINT}}",
+                "{{SAMPLING.TIME_H}}",
+                "{{SAMPLING.VOLUME}}",
+                "{{SAMPLING.DEVIATION}}",
+                "",
+            ]
+        ]
     add(
         "BLOOD_SAMPLING",
         "Blood sampling",
         "4.4.2",
-        ["#", "Time (h)", "Reason"],
+        ["#", "Time (h)", "Volume (ml)", "Deviation", "Condition"],
         samp_rows,
         fill_mode="REBUILD",
     )

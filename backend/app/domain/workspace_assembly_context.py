@@ -253,13 +253,66 @@ def build_workspace_assembly_context(
         "trade_name": test_name,
         "inn": test_inn,
         "dosage": str(test_dose) if test_dose is not None else None,
+        "dosage_form": pick(
+            "test_product.dosage_form",
+            "product.dosage_form",
+            "test_product.form",
+        ),
+        "manufacturer": pick("test_product.manufacturer", "product.manufacturer"),
+        "composition": pick("test_product.composition", "product.composition"),
+        "route": pick("test_product.route", "product.route"),
+        "storage_conditions": pick(
+            "test_product.storage",
+            "test_product.storage_conditions",
+            "product.storage_conditions",
+        ),
+        "manufacturer_country": pick(
+            "test_product.manufacturer_country",
+            "product.manufacturer_country",
+        ),
+        "registration_number": pick(
+            "test_product.registration_number",
+            "product.registration_number",
+        ),
+        "shelf_life": pick("test_product.shelf_life", "product.shelf_life"),
+        "batch": pick("test_product.batch", "product.batch"),
         "source_ids": [],
     }
     reference_product = {
         "trade_name": ref_name,
         "inn": ref_inn,
         "dosage": str(ref_dose) if ref_dose is not None else None,
-        "purchased_status": "UNKNOWN",
+        "dosage_form": pick(
+            "reference_product.dosage_form",
+            "reference.dosage_form",
+        ),
+        "manufacturer": pick(
+            "reference_product.manufacturer",
+            "reference.manufacturer",
+        ),
+        "composition": pick(
+            "reference_product.composition",
+            "reference.composition",
+        ),
+        "route": pick("reference_product.route", "reference.route"),
+        "storage_conditions": pick(
+            "reference_product.storage",
+            "reference_product.storage_conditions",
+        ),
+        "manufacturer_country": pick(
+            "reference_product.manufacturer_country",
+            "reference.manufacturer_country",
+        ),
+        "registration_number": pick(
+            "reference_product.registration_number",
+            "reference.registration_number",
+        ),
+        "shelf_life": pick("reference_product.shelf_life", "reference.shelf_life"),
+        "batch": pick("reference_product.batch", "reference.batch"),
+        "purchased_status": pick(
+            "reference_product.purchased_status",
+            default="UNKNOWN",
+        ),
         "source_ids": [],
     }
 
@@ -316,6 +369,8 @@ def build_workspace_assembly_context(
             "planned_screened_n": screened,
         },
         "eligibility": {"inclusion": [], "non_inclusion": [], "exclusion": []},
+        "bioanalysis_plan": pick("bioanalysis", "bioanalysis_plan", default={}) or {},
+        "safety_plan": pick("safety", "safety_plan", default={}) or {},
         "analytes": analytes,
         "pk_parameters": pk_parameters,
         "washout": washout,

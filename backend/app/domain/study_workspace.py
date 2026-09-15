@@ -713,7 +713,6 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         or "Template contains product-specific content that is not supported by the current study.",
         bool(contam_draft.get("ok")),
     )
-    # Attach action for UI
     if checks:
         checks[-1]["action"] = contam_draft.get("action")
         checks[-1]["details"] = {
@@ -723,6 +722,22 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
             "final_unmanaged": contam_final.get("unmanaged_blocks"),
             "draft_clears_at_render": True,
         }
+
+    # Phase 30.3 — FINAL semantic gaps (WARNING here so DRAFT export stays available;
+    # generate_docx_artifact(mode=FINAL) enforces fail-closed).
+    from app.domain.docx_semantic_integrity import semantic_preflight_from_context
+
+    sem = semantic_preflight_from_context(study_ctx, mode="FINAL")
+    add(
+        "SEMANTIC",
+        "SEMANTIC_FINAL_GAPS",
+        "WARNING",
+        sem.get("message") or "Semantic FINAL readiness",
+        bool(sem.get("ok")),
+    )
+    if checks:
+        checks[-1]["details"] = {"final_semantic": sem, "blockers": sem.get("blockers")}
+        checks[-1]["action"] = "Close required dynamic sources before FINAL DOCX"
 
     critical_fail = [c for c in checks if c["severity"] == "CRITICAL" and not c["ok"]]
     docx_blocking = list(critical_fail)
@@ -734,7 +749,8 @@ def build_preflight(study_id: str, *, package_id: str | None = None) -> dict[str
         "docx_blockers": docx_blocking,
         "can_finalize": len(critical_fail) == 0
         and ready["can_finalize"]
-        and bool(contam_final.get("ok")),
+        and bool(contam_final.get("ok"))
+        and bool(sem.get("ok")),
         # DRAFT DOCX: hard CRITICAL only. Template example is cleared at render when draft ok.
         "can_generate_docx": len(docx_blocking) == 0 and bool(contam_draft.get("ok")),
         "readiness": ready["readiness"],

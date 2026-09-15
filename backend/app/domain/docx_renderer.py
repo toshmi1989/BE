@@ -48,6 +48,8 @@ class RenderResult:
     template_version: str = ""
     generator_version: str = DOCX_GENERATOR_VERSION
     profile_version: str = ""
+    semantic_integrity: dict[str, Any] | None = None
+    toc_status: dict[str, Any] | None = None
 
 
 def _verify_template(profile: DocxTemplateProfile, path: Path) -> list[str]:
@@ -276,8 +278,11 @@ def _normalize_label(label: str) -> str:
     return (label or "").strip().lower().replace("ё", "е").rstrip(":").replace("\t", " ")
 
 
-def _fill_label_value_table(table, rows: list[list[Any]]) -> None:
-    """Fill 2-column label/value table by matching labels — never by blind row index."""
+def _fill_label_value_table(table, rows: list[list[Any]], *, allow_ordinal_fallback: bool = False) -> dict[str, Any]:
+    """Fill 2-column label/value table by matching labels — never by blind row index.
+
+    Phase 30.3: ordinal fallback is OFF by default (caused dosage_form=56).
+    """
     from app.domain.product_mapping import field_for_label, normalize_label
 
     # Build incoming map: normalized label → value (prefer col0 as label, col1 as value)
@@ -299,6 +304,7 @@ def _fill_label_value_table(table, rows: list[list[Any]]) -> None:
             ordered_values.append(("", str(row_data[0])))
 
     matched_any = False
+    unmatched_labels: list[str] = []
     for table_row in table.rows:
         cells = table_row.cells
         if len(cells) < 2:
@@ -313,17 +319,19 @@ def _fill_label_value_table(table, rows: list[list[Any]]) -> None:
             if field and field in incoming:
                 value = incoming[field]
             else:
-                # fuzzy contains match for synopsis population rows
+                # fuzzy contains match — only when key is long enough to avoid collisions
                 for key, val in incoming.items():
-                    if key and key in norm:
+                    if key and len(key) >= 4 and key in norm:
                         value = val
                         break
-        if value is not None:
+        if value is not None and str(value).strip() != "":
             _set_cell_text(cells[1], value)
             matched_any = True
+        elif label_text:
+            unmatched_labels.append(label_text)
 
-    # Fallback: if no labels matched (unusual table), keep prior index fill for short tables
-    if not matched_any:
+    # Phase 30.3: no ordinal fallback unless explicitly enabled for non-critical tables
+    if not matched_any and allow_ordinal_fallback:
         for r_i, row_data in enumerate(rows):
             if r_i >= len(table.rows):
                 break
@@ -336,6 +344,13 @@ def _fill_label_value_table(table, rows: list[list[Any]]) -> None:
                     if existing and not str(val or "").endswith(":"):
                         continue
                 _set_cell_text(cells[c_i], "" if val is None else str(val))
+        return {"matched": False, "ordinal_fallback": True, "unmatched_labels": unmatched_labels}
+
+    return {
+        "matched": matched_any,
+        "ordinal_fallback": False,
+        "unmatched_labels": unmatched_labels[:20],
+    }
 
 
 def _apply_synopsis_canonical_fill(doc: Document, study_ctx: dict, consistency: dict[str, Any]) -> None:
@@ -614,13 +629,16 @@ def render_protocol_docx(
         if fill_mode == "REBUILD" or key in {"BLOOD_SAMPLING", "PK_PARAMETERS", "CV_EVIDENCE", "MEAL_TIMING", "SOURCES"}:
             if rows:
                 _rebuild_table_data_rows(tmpl, cols, rows)
-        elif key in {"TEST_PRODUCT", "REFERENCE_PRODUCT", "STUDY_METADATA", "SIGNATURES"}:
-            _fill_label_value_table(tmpl, rows)
+        elif key in {"TEST_PRODUCT", "REFERENCE_PRODUCT", "COVER_METADATA", "SIGNATURES"}:
+            _fill_label_value_table(tmpl, rows, allow_ordinal_fallback=False)
         elif key == "SYNOPSIS_N":
             # merge into synopsis table T03 — fill matching labels if present
-            _fill_label_value_table(tmpl, rows)
+            _fill_label_value_table(tmpl, rows, allow_ordinal_fallback=False)
+        elif key == "STUDY_METADATA":
+            # Never ordinal-dump into an unmapped template table
+            _fill_label_value_table(tmpl, rows, allow_ordinal_fallback=False)
         else:
-            _fill_label_value_table(tmpl, rows)
+            _fill_label_value_table(tmpl, rows, allow_ordinal_fallback=False)
 
     touch_synopsis = only_set is None or (
         "SYNOPSIS_N" in (allowed_table_keys or set())
@@ -668,37 +686,23 @@ def render_protocol_docx(
                 continue
             insert_after = _insert_paragraph_after(insert_after, line, style="Normal")
 
-    # Cover / synopsis table T01 light fill — skip on narrow targeted renders
+    # Cover / synopsis table T01 — typed label mapping (Phase 30.3)
     touch_cover = only_set is None or any(
-        c in only_set for c in ("1.1", "1.2", "1.3", "SYNOPSIS", "2.1.1")
+        c in only_set for c in ("1.1", "1.2", "1.3", "SYNOPSIS", "2.1.1", "COVER")
     )
-    if touch_cover and len(doc.tables) > 0 and product:
-        t0 = doc.tables[0]
-        # best-effort: do not invent; only write known values into empty-ish value cells
-        from app.domain.org_render import resolve_sponsor as _resolve_sponsor
+    if touch_cover and len(doc.tables) > 0:
+        from app.domain.cover_mapping import resolve_cover_value
 
-        sp = _resolve_sponsor(study_ctx)
-        known = {
-            "protocol": str(study.get("protocol_number") or ""),
-            "product": str(product.get("trade_name") or product.get("inn") or ""),
-            "dose": str(product.get("dosage") or ""),
-            "design": str(consistency.get("design") or ""),
-            "sponsor": str((sp or {}).get("name") or (sp or {}).get("legal_name") or ""),
-        }
+        t0 = doc.tables[0]
         for row in t0.rows:
-            label = (row.cells[0].text or "").lower() if row.cells else ""
             if len(row.cells) < 2:
                 continue
-            if "протокол" in label and known["protocol"]:
-                _set_cell_text(row.cells[1], known["protocol"])
-            elif ("препарат" in label or "назван" in label) and known["product"]:
-                _set_cell_text(row.cells[1], known["product"])
-            elif "дизайн" in label and known["design"]:
-                _set_cell_text(row.cells[1], known["design"])
-            elif ("доз" in label) and known["dose"]:
-                _set_cell_text(row.cells[1], known["dose"])
-            elif "спонсор" in label and known["sponsor"]:
-                _set_cell_text(row.cells[1], known["sponsor"])
+            label = row.cells[0].text or ""
+            _field, value, err = resolve_cover_value(label, study_ctx)
+            if err == "WRONG_MAPPING_DOSAGE_FORM_SUBJECT_COUNT":
+                continue
+            if value:
+                _set_cell_text(row.cells[1], value)
 
     # Header/footer vars: safe on targeted path (placeholders only, no section rewrite)
     hf_vars = {
@@ -738,13 +742,23 @@ def render_protocol_docx(
                 profile_version=profile.profile_version,
             )
 
-    # TOC fields: leave Word field codes intact (documented)
+    # TOC refresh (LibreOffice when available; else clear stale page numbers)
     doc.save(str(out_path))
+    from app.domain.docx_toc import refresh_toc_fields
+    from app.domain.docx_semantic_integrity import assess_docx_semantic_integrity
+
+    toc_status = refresh_toc_fields(out_path)
+    toc_ok = bool(toc_status.get("toc_refreshed"))
 
     allow_unresolved = mode == "DRAFT"
     validation = validate_docx_file(out_path, allow_unresolved=allow_unresolved)
-    # Extra gate: FINAL/REVIEW must have clean validation
-    if mode in {"REVIEW", "FINAL"} and validation.blocking:
+    semantic = assess_docx_semantic_integrity(
+        out_path, study_ctx, mode=mode, toc_refreshed=toc_ok
+    )
+    # Extra gate: FINAL/REVIEW must have clean validation + semantic integrity
+    if mode in {"REVIEW", "FINAL"} and (validation.blocking or not semantic.ok):
+        reasons = [i.message for i in validation.issues if i.severity in {"CRITICAL", "ERROR"}]
+        reasons.extend(i.message for i in semantic.issues if i.severity == "CRITICAL")
         out_path.unlink(missing_ok=True)
         return RenderResult(
             status="BLOCKED",
@@ -753,16 +767,34 @@ def render_protocol_docx(
             checksum=None,
             filename=None,
             validation=validation,
-            blocking_reasons=[i.message for i in validation.issues if i.severity in {"CRITICAL", "ERROR"}],
+            blocking_reasons=reasons,
             table_numbers=table_numbers,
             template_version=profile.template_version,
             profile_version=profile.profile_version,
+            semantic_integrity=semantic.to_dict(),
+            toc_status=toc_status,
         )
 
     checksum = sha256_hex(out_path.read_bytes())
     status = "READY"
-    if mode == "DRAFT" and (gate or validation.unresolved_found):
-        # DRAFT may be READY with warnings
+    if mode == "DRAFT" and (gate or validation.unresolved_found or not semantic.ok):
+        # DRAFT may be READY with warnings; CRITICAL wrong mappings still surface in integrity
+        if any(i.code.startswith("WRONG_MAPPING") for i in semantic.issues):
+            out_path.unlink(missing_ok=True)
+            return RenderResult(
+                status="BLOCKED",
+                mode=mode,
+                output_path=None,
+                checksum=None,
+                filename=None,
+                validation=validation,
+                blocking_reasons=[i.message for i in semantic.issues if i.severity == "CRITICAL"],
+                table_numbers=table_numbers,
+                template_version=profile.template_version,
+                profile_version=profile.profile_version,
+                semantic_integrity=semantic.to_dict(),
+                toc_status=toc_status,
+            )
         status = "READY"
     return RenderResult(
         status=status,
@@ -775,4 +807,6 @@ def render_protocol_docx(
         table_numbers=table_numbers,
         template_version=profile.template_version,
         profile_version=profile.profile_version,
+        semantic_integrity=semantic.to_dict(),
+        toc_status=toc_status,
     )

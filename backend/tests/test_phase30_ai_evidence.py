@@ -69,8 +69,8 @@ def client():
 
 
 def test_phase30_version():
-    assert Settings().app_version == "0.35.2"
-    assert PROTOCOL_GENERATOR_VERSION == "0.35.2"
+    assert Settings().app_version == "0.35.3"
+    assert PROTOCOL_GENERATOR_VERSION == "0.35.3"
 
 
 def test_ai_proposal_creation_and_proposed_status():

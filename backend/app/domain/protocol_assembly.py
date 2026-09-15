@@ -301,7 +301,12 @@ def _gen_objectives(section: SectionDef, ctx: dict, variables: dict, consistency
 def _gen_pk_parameters(section: SectionDef, ctx: dict, variables: dict, consistency: dict):
     return [
         _block(type_="TABLE", table_key="PK_PARAMETERS", origin="SOURCE_DERIVED"),
-        _block(type_="REFERENCE", target_type="table", target_id="PK_PARAMETERS", display_text="таблица PK_PARAMETERS"),
+        _block(
+            type_="REFERENCE",
+            target_type="table",
+            target_id="PK_PARAMETERS",
+            display_text="таблица фармакокинетических параметров",
+        ),
     ], [], []
 
 
@@ -357,7 +362,7 @@ def _gen_sampling_plan(section: SectionDef, ctx: dict, variables: dict, consiste
             type_="REFERENCE",
             target_type="table",
             target_id="BLOOD_SAMPLING",
-            display_text="таблица BLOOD_SAMPLING",
+            display_text="таблица отбора проб крови",
         )
     )
     sampling = ctx.get("sampling") or {}
